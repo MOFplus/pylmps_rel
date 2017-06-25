@@ -44,6 +44,7 @@ evars = {
          "epot"    : "pe",
          }
 enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsions"]
+pressure = ["pxx", "pyy", "pzz", "pxy", "pxz", "pyz"]
 
 class pylmps:
     
@@ -55,7 +56,7 @@ class pylmps:
         return
         
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF"):
-        self.lmps = lammps(cmdargs=["-screen", "none", "-log", "none"])
+        self.lmps = lammps(cmdargs=["-log", "none"])
         # depending on what type of input is given a setup will be done
         # the default is to load an mfpx file and assign from MOF+ (using force field MOF-FF)
         # if par is given or ff="file" we use mfpx/ric/par
@@ -91,6 +92,10 @@ class pylmps:
         # connect variables for extracting
         for e in evars:
             self.lmps.command("variable %s equal %s" % (e, evars[e]))
+        for p in pressure:
+            self.lmps.command("variable %s equal %s" % (p,p))
+        # stole this from ASE lammpslib ... needed to recompute the stress ?? should affect only the ouptut ... compute is automatically generated
+        self.lmps.command('thermo_style custom pe temp pxx pyy pzz')
         self.natoms = self.lmps.get_natoms()      
         # compute energy of initial config
         self.calc_energy()
@@ -141,6 +146,17 @@ class pylmps:
         xyz = np.ctypeslib.as_array(self.lmps.gather_atoms("x",1,3))
         xyz.shape=(self.natoms,3)
         return xyz
+        
+    def get_pressure(self):
+        ptensor_flat = np.zeros([6])
+        for i,p in enumerate(pressure):
+            ptensor_flat[i] = self.lmps.extract_variable(p, None, 0)
+        ptensor = np.zeros([3,3], "d")
+        ptensor[0,0] = ptensor_flat[0]
+        ptensor[1,1] = ptensor_flat[1]
+        ptensor[2,2] = ptensor_flat[2]
+        # CHECK this conversion from Anthmosphere (real units in lammps) to kcal/mol/A^3 ... soemthing is wrong here
+        return ptensor  # *1.458397e-5
 
     def set_xyz(self, xyz):
         """
@@ -149,6 +165,23 @@ class pylmps:
         self.lmps.scatter_atoms("x",1,3,np.ctypeslib.as_ctypes(xyz))
         return
        
+    def get_cell(self):
+        var = ["boxxlo", "boxxhi", "boxylo", "boxyhi", "boxzlo", "boxzhi", "xy", "xz", "yz"]
+        cell_raw = {}
+        for v in var:
+            cell_raw[v] = self.lmps.extract_global(v, 1)
+        # currently only orthorombic
+        cell = np.zeros([3,3],"d")
+        cell[0,0]= cell_raw["boxxhi"]-cell_raw["boxxlo"]
+        cell[1,1]= cell_raw["boxyhi"]-cell_raw["boxylo"]
+        cell[2,2]= cell_raw["boxzhi"]-cell_raw["boxzlo"]
+        return cell
+
+    def set_cell(self, cell):
+        # only orthormobic
+        cd = cell.diagonal()
+        self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f remap" % tuple(cd))
+        return
 
     def calc_numforce(self,delta=0.0001):
         """
@@ -176,9 +209,58 @@ class pylmps:
                 print("atom %d (%s) %d: anal: %12.6f num: %12.6f diff: %12.6f " % (a," ",i,fxyz[a,i],num_fxyz[a,i],( fxyz[a,i]-num_fxyz[a,i])))
         return fxyz, num_fxyz
         
+    def calc_numlatforce(self, delta=0.001):
+        """
+        compute the numeric force on the lattice (currently only orthormobic)
+        """
+        num_latforce = np.zeros([3], "d")
+        cell = self.get_cell()
+        for i in xrange(3):
+            cell[i,i] += delta
+            self.set_cell(cell)
+            ep = self.calc_energy()
+            cell[i,i] -= 2*delta
+            self.set_cell(cell)
+            em = self.calc_energy()
+            cell[i,i] += delta
+            self.set_cell(cell)
+            print(ep, em)
+            num_latforce[i] = -(ep-em)/(2.0*delta)
+        return num_latforce
+                
+        
         
     def end(self):
         # clean up TBI
         return
 
+###################### wrapper to tasks like MIN or MD #######################################
+
+    def MIN_cg(self, thresh, method="hftn", etol=0.0, maxiter=10, maxeval=100):
+        assert method in ["cg", "hftn", "sd"]
+        self.lmps.command("min_style %s" % method)
+        self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
+        return
+        
+    def LATMIN_boxrel(self, st_thresh, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0):
+        assert method in ["cg", "sd"]
+        stop = False
+        self.lmps.command("min_style %s" % method)
+        self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
+        while not stop:
+            self.lmps.command("fix latmin all box/relax iso %f vmax 0.01" % p)            
+            self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
+            self.lmps.command("unfix latmin")
+            self.lmps.command("min_style %s" % method)
+            self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
+            print("CELL :")
+            print(self.get_cell())
+            print("Stress TENSOR :")
+            st = self.get_pressure()
+            print(st)
+            rms_st = np.sqrt((st*st).sum())
+            if rms_st<st_thresh: stop=True
+        return
+            
+        return
 
