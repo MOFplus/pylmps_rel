@@ -287,13 +287,18 @@ class pylmps(object):
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         return
         
-    def LATMIN_boxrel(self, st_thresh, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0):
+    def LATMIN_boxrel(self, st_thresh, thresh, method="cg", bcond = 1, etol=0.0, maxiter=10, maxeval=100, p=0.0):
         assert method in ["cg", "sd"]
+        assert bcond in [1,2,3]
+        couplings = {
+                1: 'iso',
+                2: 'aniso',
+                3: 'tri'}
         stop = False
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         while not stop:
-            self.lmps.command("fix latmin all box/relax iso %f vmax 0.01" % p)            
+            self.lmps.command("fix latmin all box/relax %s %f vmax 0.01" % (couplings[bcond], p))            
             self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
             self.lmps.command("unfix latmin")
             self.lmps.command("min_style %s" % method)
