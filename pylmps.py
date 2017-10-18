@@ -147,16 +147,26 @@ class pylmps:
         xyz.shape=(self.natoms,3)
         return xyz
         
-    def get_pressure(self):
+    def get_stress_tensor(self):
+        """
+        
+        """
         ptensor_flat = np.zeros([6])
         for i,p in enumerate(pressure):
             ptensor_flat[i] = self.lmps.extract_variable(p, None, 0)
         ptensor = np.zeros([3,3], "d")
+        # "pxx", "pyy", "pzz", "pxy", "pxz", "pyz"
         ptensor[0,0] = ptensor_flat[0]
         ptensor[1,1] = ptensor_flat[1]
         ptensor[2,2] = ptensor_flat[2]
+        ptensor[0,1] = ptensor_flat[3]
+        ptensor[1,0] = ptensor_flat[3]
+        ptensor[0,2] = ptensor_flat[4]
+        ptensor[2,0] = ptensor_flat[4]
+        ptensor[1,2] = ptensor_flat[5]
+        ptensor[2,1] = ptensor_flat[5] 
         # CHECK this conversion from Anthmosphere (real units in lammps) to kcal/mol/A^3 ... soemthing is wrong here
-        return ptensor  # *1.458397e-5
+        return ptensor*1.458397e-5
 
     def set_xyz(self, xyz):
         """
