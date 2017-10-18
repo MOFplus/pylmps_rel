@@ -14,6 +14,7 @@ from __future__ import print_function
 
 import numpy as np
 import string
+import os
 from mpi4py import MPI
 
 import molsys
@@ -21,7 +22,7 @@ import molsys.util.ff2lammps as ff2lammps
 
 mpi_rank = MPI.COMM_WORLD.Get_rank()
 mpi_size = MPI.COMM_WORLD.Get_size()
-
+wcomm = MPI.COMM_WORLD
 # overload print function in parallel case
 import __builtin__
 def print(*args, **kwargs):
@@ -46,7 +47,7 @@ evars = {
 enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsions"]
 pressure = ["pxx", "pyy", "pzz", "pxy", "pxz", "pyz"]
 
-class pylmps:
+class pylmps(object):
     
     def __init__(self, name):
         self.name = name
@@ -55,13 +56,17 @@ class pylmps:
         self.control["kspace"] = False
         return
         
-    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF"):
-        self.lmps = lammps(cmdargs=["-log", "none"])
+    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", 
+            logfile = 'none', screen = True):
+        cmdargs = ['-log', logfile]
+        if screen == False: cmdargs+=['-screen', 'none']
+        self.lmps = lammps(cmdargs=cmdargs)
         # depending on what type of input is given a setup will be done
         # the default is to load an mfpx file and assign from MOF+ (using force field MOF-FF)
         # if par is given or ff="file" we use mfpx/ric/par
         # if mol is given then this is expected to be an already assigned mol object
         #      (in the latter case everything else is ignored!)
+        self.start_dir = os.getcwd()
         if mol != None:
             self.mol = mol
         else:
@@ -79,16 +84,34 @@ class pylmps:
                 self.mol.ff.assign_params(ff)
         # now generate the converter
         self.ff2lmp = ff2lammps.ff2lammps(self.mol)
+        self.data_file = self.name+".data"
+        self.inp_file  = self.name+".in"
         if local:
-            self.data_file = self.name+".data"
-            self.inp_file  = self.name+".in"
+#            self.data_file = self.name+".data"
+#            self.inp_file  = self.name+".in"
+            self.rundir=self.start_dir
         else:
-            raise ValueError, "to be implemented"
+            self.rundir = self.start_dir+'/'+self.name
+            if wcomm.Get_rank() ==0:
+                if os.path.isdir(self.rundir):
+                    i=1
+                    temprundir = self.rundir+('_%d' % i)
+                    while os.path.isdir(temprundir):
+                        i+=1
+                        temprundir = self.rundir+('_%d' % i)
+                    self.rundir = temprundir
+                os.mkdir(self.rundir)
+            self.rundir=wcomm.bcast(self.rundir)
+            wcomm.Barrier()
+            os.chdir(self.rundir)
+        #further settings in order to be compatible to pydlpoly
+        self.QMMM = False
         # before writing output we can adjust the settings in ff2lmp
         # TBI
         self.ff2lmp.write_data(filename=self.data_file)
         self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"])
         self.lmps.file(self.inp_file)
+        os.chdir(self.start_dir)
         # connect variables for extracting
         for e in evars:
             self.lmps.command("variable %s equal %s" % (e, evars[e]))
@@ -96,15 +119,25 @@ class pylmps:
             self.lmps.command("variable %s equal %s" % (p,p))
         # stole this from ASE lammpslib ... needed to recompute the stress ?? should affect only the ouptut ... compute is automatically generated
         self.lmps.command('thermo_style custom pe temp pxx pyy pzz')
-        self.natoms = self.lmps.get_natoms()      
+        self.natoms = self.lmps.get_natoms()
         # compute energy of initial config
         self.calc_energy()
         self.report_energies()
         return
 
+    def get_natoms(self):
+        return self.lmps.get_natoms()
+
+    def get_elements(self):
+        return self.mol.get_elems()
+
     def get_eterm(self, name):
         assert name in evars
         return self.lmps.extract_variable(name,None,0)
+
+    def set_logger(self, default = 'none'):
+        self.lmps.command("log %s" % default)
+        return
         
     def calc_energy(self):
         self.lmps.command("run 0 post no")
@@ -185,12 +218,24 @@ class pylmps:
         cell[0,0]= cell_raw["boxxhi"]-cell_raw["boxxlo"]
         cell[1,1]= cell_raw["boxyhi"]-cell_raw["boxylo"]
         cell[2,2]= cell_raw["boxzhi"]-cell_raw["boxzlo"]
+        # set tilting
+        cell[1,0] = cell_raw['xy']
+        cell[2,0] = cell_raw['xz']
+        cell[2,1] = cell_raw['yz']
         return cell
 
-    def set_cell(self, cell):
-        # only orthormobic
-        cd = cell.diagonal()
-        self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f remap" % tuple(cd))
+    def set_cell(self, cell, cell_only=False):
+        # we have to check here if the box is correctly rotated in the triclinic case
+        if abs(cell[0,1]) > 10e-14: raise IOError("Cell is not properly rotated")
+        if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
+        if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
+#        cd = cell.diagonal()
+        cd = tuple(self.ff2lmp.cell2tilts(cell))
+        if cell_only:
+            self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f" % cd)
+        else:
+            self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f remap" % cd)
+#        self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f remap" % tuple(cd))
         return
 
     def calc_numforce(self,delta=0.0001):
