@@ -320,8 +320,11 @@ class pylmps(object):
 
 ###################### wrapper to tasks like MIN or MD #######################################
 
-    def MIN_cg(self, thresh, method="hftn", etol=0.0, maxiter=10, maxeval=100):
+    def MIN_cg(self, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100):
         assert method in ["cg", "hftn", "sd"]
+        # transform tresh from pydlpoly tresh to lammps tresh
+        # pydlpoly uses norm(f)*sqrt(1/3nat) whereas lammps uses normf
+        thresh *= np.sqrt(3*self.natoms)
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         return
