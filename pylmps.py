@@ -11,6 +11,7 @@ Created on Sat Apr 22 17:43:56 2017
 
 """
 from __future__ import print_function
+import __builtin__
 
 import numpy as np
 import string
@@ -19,17 +20,15 @@ from mpi4py import MPI
 
 import molsys
 import molsys.util.ff2lammps as ff2lammps
-
-mpi_rank = MPI.COMM_WORLD.Get_rank()
-mpi_size = MPI.COMM_WORLD.Get_size()
+from molsys import mpiobject
 wcomm = MPI.COMM_WORLD
 # overload print function in parallel case
-import __builtin__
-def print(*args, **kwargs):
-    if mpi_rank == 0:
-        return __builtin__.print(*args, **kwargs)
-    else:
-        return
+#import __builtin__
+#def print(*args, **kwargs):
+#    if mpi_rank == 0:
+#        return __builtin__.print(*args, **kwargs)
+#    else:
+#        return
 
 from lammps import lammps
 
@@ -47,20 +46,21 @@ evars = {
 enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsions"]
 pressure = ["pxx", "pyy", "pzz", "pxy", "pxz", "pyz"]
 
-class pylmps(object):
+class pylmps(mpiobject):
     
-    def __init__(self, name):
+    def __init__(self, name, mpi_comm=None, out = None):
+        super(pylmps, self).__init__(mpi_comm,out)
         self.name = name
         # TBI
         self.control = {}
         self.control["kspace"] = False
         return
-        
+
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", 
             logfile = 'none', screen = True, bcond=2):
         cmdargs = ['-log', logfile]
         if screen == False: cmdargs+=['-screen', 'none']
-        self.lmps = lammps(cmdargs=cmdargs)
+        self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
         # depending on what type of input is given a setup will be done
         # the default is to load an mfpx file and assign from MOF+ (using force field MOF-FF)
         # if par is given or ff="file" we use mfpx/ric/par
@@ -92,7 +92,7 @@ class pylmps(object):
             self.rundir=self.start_dir
         else:
             self.rundir = self.start_dir+'/'+self.name
-            if wcomm.Get_rank() ==0:
+            if self.mpi_comm.Get_rank() ==0:
                 if os.path.isdir(self.rundir):
                     i=1
                     temprundir = self.rundir+('_%d' % i)
@@ -101,8 +101,10 @@ class pylmps(object):
                         temprundir = self.rundir+('_%d' % i)
                     self.rundir = temprundir
                 os.mkdir(self.rundir)
-            self.rundir=wcomm.bcast(self.rundir)
-            wcomm.Barrier()
+            self.rundir=self.mpi_comm.bcast(self.rundir)
+            self.mpi_comm.Barrier()
+            self.pprint(self.rundir)
+            self.pprint(self.name)
             os.chdir(self.rundir)
         #further settings in order to be compatible to pydlpoly
         self.QMMM = False
@@ -162,8 +164,8 @@ class pylmps(object):
         etot = 0.0
         for en in enames:
             etot += e[en]
-            print("%15s : %15.8f kcal/mol" % (en, e[en]))
-        print("%15s : %15.8f kcal/mol" % ("TOTAL", etot))
+            self.pprint("%15s : %15.8f kcal/mol" % (en, e[en]))
+        self.pprint("%15s : %15.8f kcal/mol" % ("TOTAL", etot))
         return
         
     def get_force(self):
@@ -249,7 +251,7 @@ class pylmps(object):
 
     def get_cellforce(self):
         cell    = self.get_cell()
-        # we need to get the stress tnesor times the colume here (in ananlogy to get_stress in pydlpoly)
+        # we need to get the stress tensor times the volume here (in ananlogy to get_stress in pydlpoly)
         stress  = self.get_stress_tensor()*self.get_cell_volume()
         # compute force from stress tensor
         cell_inv = np.linalg.inv(cell)
@@ -329,8 +331,9 @@ class pylmps(object):
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         return
         
-    def LATMIN_boxrel(self, st_thresh, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0):
+    def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0):
         assert method in ["cg", "sd"]
+        thresh *= np.sqrt(3*self.natoms)
         couplings = {
                 1: 'iso',
                 2: 'aniso',
@@ -344,16 +347,23 @@ class pylmps(object):
             self.lmps.command("unfix latmin")
             self.lmps.command("min_style %s" % method)
             self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
-            print("CELL :")
-            print(self.get_cell())
-            print("Stress TENSOR :")
-            st = self.get_pressure()
-            print(st)
-            rms_st = np.sqrt((st*st).sum())
-            if rms_st<st_thresh: stop=True
+            self.pprint("CELL :")
+            self.pprint(self.get_cell())
+#            print("Stress TENSOR :")
+#            st = self.get_pressure()
+#            print(st)
+#            rms_st = np.sqrt((st*st).sum())
+#            if rms_st<st_thresh: stop=True
+            cellforce = self.get_cellforce()
+            self.pprint ("Current cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
+            rms_cellforce = np.sqrt(np.sum(cellforce*cellforce)/9.0)
+            self.pprint ("Current rms cellforce: %12.6f" % rms_cellforce)
+#            latiter += 1
+#            if latiter >= lat_maxiter: stop = True
+            if rms_cellforce < threshlat: stop = True
         return
             
-    def LATMIN_sd(self,threshlat, thresh, lat_maxiter= 100, maxiter=20, fact = 2.0e-3, maxstep = 3.0):
+    def LATMIN_sd(self,threshlat, thresh, lat_maxiter= 100, maxiter=500, fact = 2.0e-3, maxstep = 3.0):
         """
         Lattice and Geometry optimization (uses MIN_cg for geom opt and steepest descent in lattice parameters)
 
@@ -386,6 +396,8 @@ class pylmps(object):
                 print("Constraining to a maximum steplength of %10.5f" % maxstep)
                 step *= maxstep/steplength
             new_cell = cell + step
+            # cell has to be properly rotated for lammps
+            new_cell = self.ff2lmp.rotate_cell(new_cell)
             print ("New cell:\n%s" % np.array2string(new_cell,precision=4,suppress_small=True))
             self.set_cell(new_cell)
             self.MIN_cg(thresh, maxiter=maxiter)
