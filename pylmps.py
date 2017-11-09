@@ -54,6 +54,7 @@ class pylmps(mpiobject):
         # TBI
         self.control = {}
         self.control["kspace"] = False
+        self.control["oop_umbrella"] = False
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", 
@@ -84,6 +85,10 @@ class pylmps(mpiobject):
                 self.mol.ff.assign_params(ff)
         # now generate the converter
         self.ff2lmp = ff2lammps.ff2lammps(self.mol)
+        # adjust the settings
+        if self.control["oop_umbrella"]:
+            self.pprint("using umbrella_harmonic for OOP terms")
+            self.ff2lmp.setting("use_improper_umbrella_harmonic", True)
         self.data_file = self.name+".data"
         self.inp_file  = self.name+".in"
         if local:
