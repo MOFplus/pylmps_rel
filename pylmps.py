@@ -237,6 +237,7 @@ class pylmps(mpiobject):
 
     def set_cell(self, cell, cell_only=False):
         # we have to check here if the box is correctly rotated in the triclinic case
+        cell = self.ff2lmp.rotate_cell(cell)
         if abs(cell[0,1]) > 10e-14: raise IOError("Cell is not properly rotated")
         if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
         if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
@@ -313,8 +314,9 @@ class pylmps(mpiobject):
             print(ep, em)
             num_latforce[i] = -(ep-em)/(2.0*delta)
         return num_latforce
-                
-        
+
+    def get_bcond(self):
+        return self.bcond
         
     def end(self):
         # clean up TBI
