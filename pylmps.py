@@ -127,6 +127,7 @@ class pylmps(mpiobject):
         # compute energy of initial config
         self.calc_energy()
         self.report_energies()
+        self.md_fixes = []
         return
 
     def get_natoms(self):
@@ -418,6 +419,65 @@ class pylmps(mpiobject):
             if rms_cellforce < threshlat: stop = True
         print ("SD minimizer done")
         return
+
+
+    def MD_init(self, stage, T = None, p=None, startup = False,ensemble='nve', thermo=None, 
+            relax=None, traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso'):
+        assert bcond in ['iso', 'aniso', 'tri']
+        # first specify the timestep in femtoseconds
+        # the relax values are multiples of the timestep
+        self.lmps.command('timestep %12.6f' % timestep)
+        # manage output, this is the setup for the output written to screen and log file
+        self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe\
+                ke temp press vol cella cellb cellc cellalpha cellbeta cellgamma')
+        # this is the dump command, up to know plain ascii
+        self.lmps.command('dump %s all atom %i %s.dump' % (stage, tnstep, stage))
+        # do velocity startup
+        if startup:
+            self.lmps.command('velocity all create %12.6f 42 rot yes dist gaussian' % (T))
+        # apply fix
+        if ensemble == 'nve':
+            self.md_fixes = [stage]
+            self.lmps.command('fix %s all nve' % (stage))
+        elif ensemble == 'nvt':
+            if thermo == 'ber':
+                self.lmps.command('fix %s all temp/berendsen %12.6f %12.6f %i'% (stage,T,T,relax[0]))
+                self.lmps.command('fix %s_nve all nve' % stage)
+                self.md_fixes = [stage, '%s_nve' % stage]
+            elif thermo == 'hoover':
+                self.lmps.command('fix %s all nvt temp %12.6f %12.6f %i' % (stage,T,T,relax[0]))
+                self.md_fixes = [stage]
+            else: 
+                raise NotImplementedError
+        elif ensemble == "npt":
+            if thermo == 'hoover':
+                self.lmps.command('fix %s all npt temp %12.6f %12.6f %i %s %12.6f %12.6f %i' 
+                        % (stage,T,T,relax[0],bcond, p, p, relax[1]))
+                self.md_fixes = [stage]
+            elif thermo == 'ber':
+                assert bcond != "tri"
+                self.lmps.command('fix %s_temp all temp/berendsen %12.6f %12.6f %i'% (stage,T,T,relax[0]))
+                self.lmps.command('fix %s_press all press/berendsen %s %12.6f %12.6f %i'% (stage,bcond,p,p,relax[1]))
+                self.lmps.command('fix %s_nve all nve' % stage)
+                self.md_fixes = ['%s_temp' % stage,'%s_press' % stage , '%s_nve' % stage]
+            else:
+                raise NotImplementedError
+        else:
+            raise NotImplementedError
+        return
+
+    def MD_run(self, nsteps, printout=100):
+        assert len(self.md_fixes) > 0
+        self.lmps.command('thermo %i' % printout)
+        self.lmps.command('run %i' % nsteps)
+        for fix in self.md_fixes: self.lmps.command('unfix %s' % fix)
+        self.md_fixes = []
+        return
+
+
+
+
+
 
 
 
