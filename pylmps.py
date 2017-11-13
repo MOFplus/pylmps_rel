@@ -427,16 +427,17 @@ class pylmps(mpiobject):
 
 
     def MD_init(self, stage, T = None, p=None, startup = False,ensemble='nve', thermo=None, 
-            relax=None, traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso'):
+            relax=(100,1000), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso'):
         assert bcond in ['iso', 'aniso', 'tri']
         # first specify the timestep in femtoseconds
         # the relax values are multiples of the timestep
         self.lmps.command('timestep %12.6f' % timestep)
         # manage output, this is the setup for the output written to screen and log file
         self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe\
-                ke temp press vol cella cellb cellc cellalpha cellbeta cellgamma')
+                ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma')
         # this is the dump command, up to know plain ascii
         self.lmps.command('dump %s all atom %i %s.dump' % (stage, tnstep, stage))
+#        self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage,tnstep,stage))
         # do velocity startup
         if startup:
             self.lmps.command('velocity all create %12.6f 42 rot yes dist gaussian' % (T))
