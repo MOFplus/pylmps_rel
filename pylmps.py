@@ -156,8 +156,11 @@ class pylmps(mpiobject):
         self.lmps.command("log %s" % default)
         return
         
-    def calc_energy(self):
-        self.lmps.command("run 0 post no")
+    def calc_energy(self, init=False):
+        if init:
+            self.lmps.command("run 0 pre yes post no")
+        else:
+            self.lmps.command("run 1 pre no post no")
         energy = self.get_eterm("epot")
         return energy
         
