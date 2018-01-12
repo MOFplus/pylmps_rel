@@ -134,6 +134,13 @@ class pylmps(mpiobject):
         self.report_energies()
         self.md_fixes = []
         return
+    
+    def command(self, com):
+        """
+        perform a lammps command
+        """
+        self.lmps.command(com)
+        return
 
     def get_natoms(self):
         return self.lmps.get_natoms()
@@ -149,17 +156,19 @@ class pylmps(mpiobject):
         self.lmps.command("log %s" % default)
         return
         
-    def calc_energy(self):
-        self.lmps.command("run 0 pre yes post no")
-        #self.lmps.command("run 0 pre no post no")
+    def calc_energy(self, init=False):
+        if init:
+            self.lmps.command("run 0 pre yes post no")
+        else:
+            self.lmps.command("run 1 pre no post no")
         energy = self.get_eterm("epot")
         return energy
         
-    def calc_energy_force(self):
-        energy = self.calc_energy()
+    def calc_energy_force(self, init=False):
+        energy = self.calc_energy(init)
         fxyz = self.get_force()
         return energy, fxyz
-
+        
     def get_energy_contribs(self):
         e = {}
         for en in enames:
@@ -200,7 +209,7 @@ class pylmps(mpiobject):
         
     def get_stress_tensor(self):
         """
-        
+        get the stress tensor in kcal/mol/A^3
         """
         ptensor_flat = np.zeros([6])
         for i,p in enumerate(pressure):
