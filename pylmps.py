@@ -150,7 +150,8 @@ class pylmps(mpiobject):
         return
         
     def calc_energy(self):
-        self.lmps.command("run 0 post no")
+        self.lmps.command("run 0 pre yes post no")
+        #self.lmps.command("run 0 pre no post no")
         energy = self.get_eterm("epot")
         return energy
         
@@ -158,7 +159,7 @@ class pylmps(mpiobject):
         energy = self.calc_energy()
         fxyz = self.get_force()
         return energy, fxyz
-        
+
     def get_energy_contribs(self):
         e = {}
         for en in enames:
@@ -437,6 +438,9 @@ class pylmps(mpiobject):
         # the relax values are multiples of the timestep
         self.lmps.command('timestep %12.6f' % timestep)
         # manage output, this is the setup for the output written to screen and log file
+        # define a string variable holding the name of the stage to be printed before each output line, like
+        # in pydlpoly
+        label = '%-5s' % (stage.upper()[:5])
         self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe\
                 ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma')
         # this is the dump command, up to know plain ascii
