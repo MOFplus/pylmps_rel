@@ -19,7 +19,7 @@ import os
 from mpi4py import MPI
 
 import molsys
-import molsys.util.ff2lammps as ff2lammps
+import ff2lammps
 from molsys import mpiobject
 wcomm = MPI.COMM_WORLD
 # overload print function in parallel case
