@@ -321,13 +321,13 @@ class pylmps(mpiobject):
         for i in xrange(3):
             cell[i,i] += delta
             self.set_cell(cell)
-            ep = self.calc_energy()
+            ep = self.calc_energy(init=True)
             cell[i,i] -= 2*delta
             self.set_cell(cell)
-            em = self.calc_energy()
+            em = self.calc_energy(init=True)
             cell[i,i] += delta
             self.set_cell(cell)
-            print(ep, em)
+            #print(ep, em)
             num_latforce[i] = -(ep-em)/(2.0*delta)
         return num_latforce
 
@@ -347,6 +347,7 @@ class pylmps(mpiobject):
         thresh *= np.sqrt(3*self.natoms)
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
+        self.report_energies()
         return
         
     def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0):
