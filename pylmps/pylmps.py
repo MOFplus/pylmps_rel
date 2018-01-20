@@ -438,8 +438,10 @@ class pylmps(mpiobject):
 
 
     def MD_init(self, stage, T = None, p=None, startup = False,ensemble='nve', thermo=None, 
-            relax=(100,1000), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', log = True):
+            relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', log = True):
         assert bcond in ['iso', 'aniso', 'tri']
+        def conversion(r):
+            return r * 1000/timestep 
         # pressure in athmospheres
         # if wished open a specific log file
         if log:
@@ -465,23 +467,23 @@ class pylmps(mpiobject):
             self.lmps.command('fix %s all nve' % (stage))
         elif ensemble == 'nvt':
             if thermo == 'ber':
-                self.lmps.command('fix %s all temp/berendsen %12.6f %12.6f %i'% (stage,T,T,relax[0]))
+                self.lmps.command('fix %s all temp/berendsen %12.6f %12.6f %i'% (stage,T,T,conversion(relax[0])))
                 self.lmps.command('fix %s_nve all nve' % stage)
                 self.md_fixes = [stage, '%s_nve' % stage]
             elif thermo == 'hoover':
-                self.lmps.command('fix %s all nvt temp %12.6f %12.6f %i' % (stage,T,T,relax[0]))
+                self.lmps.command('fix %s all nvt temp %12.6f %12.6f %i' % (stage,T,T,conversion(relax[0])))
                 self.md_fixes = [stage]
             else: 
                 raise NotImplementedError
         elif ensemble == "npt":
             if thermo == 'hoover':
                 self.lmps.command('fix %s all npt temp %12.6f %12.6f %i %s %12.6f %12.6f %i' 
-                        % (stage,T,T,relax[0],bcond, p, p, relax[1]))
+                        % (stage,T,T,conversion(relax[0]),bcond, p, p, conversion(relax[1])))
                 self.md_fixes = [stage]
             elif thermo == 'ber':
                 assert bcond != "tri"
-                self.lmps.command('fix %s_temp all temp/berendsen %12.6f %12.6f %i'% (stage,T,T,relax[0]))
-                self.lmps.command('fix %s_press all press/berendsen %s %12.6f %12.6f %i'% (stage,bcond,p,p,relax[1]))
+                self.lmps.command('fix %s_temp all temp/berendsen %12.6f %12.6f %i'% (stage,T,T,conversion(relax[0])))
+                self.lmps.command('fix %s_press all press/berendsen %s %12.6f %12.6f %i'% (stage,bcond,p,p,conversion(relax[1])))
                 self.lmps.command('fix %s_nve all nve' % stage)
                 self.md_fixes = ['%s_temp' % stage,'%s_press' % stage , '%s_nve' % stage]
             else:
