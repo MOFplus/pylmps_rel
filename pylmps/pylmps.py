@@ -19,7 +19,7 @@ import os
 from mpi4py import MPI
 
 import molsys
-import molsys.util.ff2lammps as ff2lammps
+import ff2lammps
 from molsys import mpiobject
 wcomm = MPI.COMM_WORLD
 # overload print function in parallel case
@@ -159,13 +159,16 @@ class pylmps(mpiobject):
         self.lmps.command("log %s" % default)
         return
         
-    def calc_energy(self):
-        self.lmps.command("run 0 post no")
+    def calc_energy(self, init=False):
+        if init:
+            self.lmps.command("run 0 pre yes post no")
+        else:
+            self.lmps.command("run 1 pre no post no")
         energy = self.get_eterm("epot")
         return energy
         
-    def calc_energy_force(self):
-        energy = self.calc_energy()
+    def calc_energy_force(self, init=False):
+        energy = self.calc_energy(init)
         fxyz = self.get_force()
         return energy, fxyz
         
@@ -321,13 +324,13 @@ class pylmps(mpiobject):
         for i in xrange(3):
             cell[i,i] += delta
             self.set_cell(cell)
-            ep = self.calc_energy()
+            ep = self.calc_energy(init=True)
             cell[i,i] -= 2*delta
             self.set_cell(cell)
-            em = self.calc_energy()
+            em = self.calc_energy(init=True)
             cell[i,i] += delta
             self.set_cell(cell)
-            print(ep, em)
+            #print(ep, em)
             num_latforce[i] = -(ep-em)/(2.0*delta)
         return num_latforce
 
@@ -347,6 +350,7 @@ class pylmps(mpiobject):
         thresh *= np.sqrt(3*self.natoms)
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
+        self.report_energies()
         return
         
     def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0):
@@ -437,8 +441,10 @@ class pylmps(mpiobject):
 
 
     def MD_init(self, stage, T = None, p=None, startup = False,ensemble='nve', thermo=None, 
-            relax=(100,1000), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', log = True):
+            relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', log = True):
         assert bcond in ['iso', 'aniso', 'tri']
+        def conversion(r):
+            return r * 1000/timestep 
         # pressure in athmospheres
         # if wished open a specific log file
         if log:
@@ -447,6 +453,9 @@ class pylmps(mpiobject):
         # the relax values are multiples of the timestep
         self.lmps.command('timestep %12.6f' % timestep)
         # manage output, this is the setup for the output written to screen and log file
+        # define a string variable holding the name of the stage to be printed before each output line, like
+        # in pydlpoly
+        label = '%-5s' % (stage.upper()[:5])
         self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe\
                 ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma')
         # this is the dump command, up to know plain ascii
@@ -461,23 +470,23 @@ class pylmps(mpiobject):
             self.lmps.command('fix %s all nve' % (stage))
         elif ensemble == 'nvt':
             if thermo == 'ber':
-                self.lmps.command('fix %s all temp/berendsen %12.6f %12.6f %i'% (stage,T,T,relax[0]))
+                self.lmps.command('fix %s all temp/berendsen %12.6f %12.6f %i'% (stage,T,T,conversion(relax[0])))
                 self.lmps.command('fix %s_nve all nve' % stage)
                 self.md_fixes = [stage, '%s_nve' % stage]
             elif thermo == 'hoover':
-                self.lmps.command('fix %s all nvt temp %12.6f %12.6f %i' % (stage,T,T,relax[0]))
+                self.lmps.command('fix %s all nvt temp %12.6f %12.6f %i' % (stage,T,T,conversion(relax[0])))
                 self.md_fixes = [stage]
             else: 
                 raise NotImplementedError
         elif ensemble == "npt":
             if thermo == 'hoover':
                 self.lmps.command('fix %s all npt temp %12.6f %12.6f %i %s %12.6f %12.6f %i' 
-                        % (stage,T,T,relax[0],bcond, p, p, relax[1]))
+                        % (stage,T,T,conversion(relax[0]),bcond, p, p, conversion(relax[1])))
                 self.md_fixes = [stage]
             elif thermo == 'ber':
                 assert bcond != "tri"
-                self.lmps.command('fix %s_temp all temp/berendsen %12.6f %12.6f %i'% (stage,T,T,relax[0]))
-                self.lmps.command('fix %s_press all press/berendsen %s %12.6f %12.6f %i'% (stage,bcond,p,p,relax[1]))
+                self.lmps.command('fix %s_temp all temp/berendsen %12.6f %12.6f %i'% (stage,T,T,conversion(relax[0])))
+                self.lmps.command('fix %s_press all press/berendsen %s %12.6f %12.6f %i'% (stage,bcond,p,p,conversion(relax[1])))
                 self.lmps.command('fix %s_nve all nve' % stage)
                 self.md_fixes = ['%s_temp' % stage,'%s_press' % stage , '%s_nve' % stage]
             else:
