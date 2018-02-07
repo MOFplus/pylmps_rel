@@ -55,6 +55,7 @@ class pylmps(mpiobject):
         self.control = {}
         self.control["kspace"] = False
         self.control["oop_umbrella"] = False
+        self.control["kspace_gewald"] = 0.0
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", 
@@ -89,6 +90,8 @@ class pylmps(mpiobject):
         if self.control["oop_umbrella"]:
             self.pprint("using umbrella_harmonic for OOP terms")
             self.ff2lmp.setting("use_improper_umbrella_harmonic", True)
+        if self.control["kspace_gewald"] != 0.0:
+            self.ff2lmp.setting("kspace_gewald", self.control["kspace_gewald"])
         self.data_file = self.name+".data"
         self.inp_file  = self.name+".in"
         if local:
