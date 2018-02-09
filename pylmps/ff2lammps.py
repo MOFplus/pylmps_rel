@@ -46,6 +46,7 @@ class ff2lammps(base):
         self._mol.molecules()
         # make lists of paramtypes and conenct to mol.ff obejcts as shortcuts
         self.ricnames = ["bnd", "ang", "dih", "oop", "cha", "vdw"]
+        self.nric = {}
         self.par_types = {}
         self.par = {}
         self.parind = {}
@@ -55,18 +56,25 @@ class ff2lammps(base):
             self.par[r]       = self._mol.ff.par[r]
             self.parind[r]    = self._mol.ff.parind[r]
             self.rics[r]      = self._mol.ff.ric_type[r]
-            # sort identical parameters (sorted) using a tuple to hash it into the dict par_types : value is a number starting from 1 
+            # sort identical parameters (sorted) using a tuple to hash it into the dict par_types : value is a number starting from 1
             par_types = {}
             i = 1
+            iric = 0
             for pil in self.parind[r]:
                 if pil:
                     pil.sort()
                     tpil = tuple(pil)
+                    # we have to check if we have none potentials in the par structure, then we have to remove them
+                    if len(tpil) == 1 and self.par[r][tpil[0]][0] == 'none': 
+                        continue
+                    else:
+                        iric += 1
                     if not tpil in par_types:
                         par_types[tpil] = i
                         i += 1
             self.par_types[r] = par_types
             self.npar[r] = i-1
+            self.nric[r] = iric
         # we need to verify that the vdw types and the charge types match because the sigma needs to be in the pair_coeff for lammps
         # thus we build our own atomtypes list combining vdw and cha and use the mol.ff.vdwdata as a source for the combined vdw params
         # but add the combined 1.0/sigma_ij here
@@ -212,13 +220,13 @@ class ff2lammps(base):
         # write header 
         header = "LAMMPS data file for mol object with MOF-FF params from www.mofplus.org\n\n"
         header += "%10d atoms\n"      % self._mol.get_natoms()
-        header += "%10d bonds\n"      % len(self.rics["bnd"])
-        header += "%10d angles\n"     % len(self.rics["ang"])
-        header += "%10d dihedrals\n"  % len(self.rics["dih"])
+        header += "%10d bonds\n"      % self.nric['bnd']
+        header += "%10d angles\n"     % self.nric['ang']
+        header += "%10d dihedrals\n"  % self.nric['dih']
         if self._settings["use_improper_umbrella_harmonic"] == True:
-            header += "%10d impropers\n"  % (len(self.rics["oop"])*3) # need all three permutations
+            header += "%10d impropers\n"  % (self.nric['oop']*3) # need all three permutations
         else:
-            header += "%10d impropers\n"  % len(self.rics["oop"])            
+            header += "%10d impropers\n"  % self.nric['oop']            
         # types are different paramtere types 
         header += "%10d atom types\n"       % len(self.plmps_atypes)
         header += "%10d bond types\n"       % len(self.par_types["bnd"]) 
@@ -280,30 +288,34 @@ class ff2lammps(base):
         for i in range(len(self.rics["bnd"])):
             bndt = tuple(self.parind["bnd"][i])
             a,b  = self.rics["bnd"][i]
-            f.write("%10d %5d %8d %8d  # %s\n" % (i+1, self.par_types["bnd"][bndt], a+1, b+1, bndt))
+            if bndt in self.par_types['bnd'].keys():
+                f.write("%10d %5d %8d %8d  # %s\n" % (i+1, self.par_types["bnd"][bndt], a+1, b+1, bndt))
         # write angles
         f.write("\nAngles\n\n")
         for i in range(len(self.rics["ang"])):
             angt = tuple(self.parind["ang"][i])
             a,b,c  = self.rics["ang"][i]
-            f.write("%10d %5d %8d %8d %8d  # %s\n" % (i+1, self.par_types["ang"][angt], a+1, b+1, c+1, angt))
+            if angt in self.par_types['ang'].keys():
+                f.write("%10d %5d %8d %8d %8d  # %s\n" % (i+1, self.par_types["ang"][angt], a+1, b+1, c+1, angt))
         # write dihedrals
         f.write("\nDihedrals\n\n")
         for i in range(len(self.rics["dih"])):
             diht = tuple(self.parind["dih"][i])
             a,b,c,d  = self.rics["dih"][i]
-            f.write("%10d %5d %8d %8d %8d %8d # %s\n" % (i+1, self.par_types["dih"][diht], a+1, b+1, c+1, d+1, diht))
+            if diht in self.par_types['dih'].keys():
+                f.write("%10d %5d %8d %8d %8d %8d # %s\n" % (i+1, self.par_types["dih"][diht], a+1, b+1, c+1, d+1, diht))
         # write impropers/oops
         f.write("\nImpropers\n\n")
         for i in range(len(self.rics["oop"])):            
-            oopt = self.parind["oop"][i]
+            oopt = tuple(self.parind["oop"][i])
             if oopt:
                 a,b,c,d  = self.rics["oop"][i]
-                f.write("%10d %5d %8d %8d %8d %8d # %s\n" % (i+1, self.par_types["oop"][tuple(oopt)], a+1, b+1, c+1, d+1, oopt))
-                if self._settings["use_improper_umbrella_harmonic"] == True:
-                    # add the other two permutations of the bended atom (abcd : a is central, d is bent)
-                    f.write("%10d %5d %8d %8d %8d %8d # %s\n" % (i+1, self.par_types["oop"][tuple(oopt)], a+1, d+1, b+1, c+1, oopt))
-                    f.write("%10d %5d %8d %8d %8d %8d # %s\n" % (i+1, self.par_types["oop"][tuple(oopt)], a+1, c+1, d+1, b+1, oopt))
+                if oopt in self.par_types['oop'].keys():
+                    f.write("%10d %5d %8d %8d %8d %8d # %s\n" % (i+1, self.par_types["oop"][tuple(oopt)], a+1, b+1, c+1, d+1, oopt))
+                    if self._settings["use_improper_umbrella_harmonic"] == True:
+                        # add the other two permutations of the bended atom (abcd : a is central, d is bent)
+                        f.write("%10d %5d %8d %8d %8d %8d # %s\n" % (i+1, self.par_types["oop"][tuple(oopt)], a+1, d+1, b+1, c+1, oopt))
+                        f.write("%10d %5d %8d %8d %8d %8d # %s\n" % (i+1, self.par_types["oop"][tuple(oopt)], a+1, c+1, d+1, b+1, oopt))
         f.write("\n")
         f.close()
         return
