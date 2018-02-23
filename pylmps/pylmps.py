@@ -60,7 +60,8 @@ class pylmps(mpiobject):
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", 
-            logfile = 'none', screen = True, bcond=2):
+            logfile = 'none', screen = True, bcond=2, kspace = False):
+        self.control["kspace"] = kspace
         cmdargs = ['-log', logfile]
         if screen == False: cmdargs+=['-screen', 'none']
         self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
