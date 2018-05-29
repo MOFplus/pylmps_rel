@@ -158,6 +158,10 @@ class pylmps(mpiobject):
         assert name in evars
         return self.lmps.extract_variable(name,None,0)
 
+    def set_atoms_moved(self):
+        ''' dummy function that does not actually do amything'''
+        return
+
     def set_logger(self, default = 'none'):
         self.lmps.command("log %s" % default)
         return
