@@ -48,9 +48,15 @@ pressure = ["pxx", "pyy", "pzz", "pxy", "pxz", "pyz"]
 
 class pylmps(mpiobject):
     
-    def __init__(self, name, mpi_comm=None, out = None):
+    def __init__(self, name, logfile = "none", screen = True, mpi_comm=None, out = None):
         super(pylmps, self).__init__(mpi_comm,out)
         self.name = name
+        # start lammps
+        cmdargs = ['-log', logfile]
+        if screen == False: cmdargs+=['-screen', 'none']
+        self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
+        for e in evars:
+            self.lmps.command("variable %s equal %s" % (e, evars[e]))
         # TBI
         self.control = {}
         self.control["kspace"] = False
@@ -60,11 +66,12 @@ class pylmps(mpiobject):
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", 
-            logfile = 'none', screen = True, bcond=2, kspace = False):
+            logfile = 'none', bcond=2, kspace = False):
         self.control["kspace"] = kspace
-        cmdargs = ['-log', logfile]
-        if screen == False: cmdargs+=['-screen', 'none']
-        self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
+#        cmdargs = ['-log', logfile]
+#        if screen == False: cmdargs+=['-screen', 'none']
+#        self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
+
         # depending on what type of input is given a setup will be done
         # the default is to load an mfpx file and assign from MOF+ (using force field MOF-FF)
         # if par is given or ff="file" we use mfpx/ric/par
@@ -134,7 +141,7 @@ class pylmps(mpiobject):
         self.lmps.command("variable vol equal vol")
         # stole this from ASE lammpslib ... needed to recompute the stress ?? should affect only the ouptut ... compute is automatically generated
         self.lmps.command('thermo_style custom pe temp pxx pyy pzz')
-        self.natoms = self.lmps.get_natoms()
+        #self.natoms = self.lmps.get_natoms()
         # compute energy of initial config
         self.calc_energy()
         self.report_energies()
@@ -147,6 +154,14 @@ class pylmps(mpiobject):
         """
         self.lmps.command(com)
         return
+
+    def file(self,fname):
+        self.lmps.file(fname)
+        return
+
+    @property
+    def natoms(self):
+        return self.lmps.get_natoms()
 
     def get_natoms(self):
         return self.lmps.get_natoms()
@@ -259,12 +274,12 @@ class pylmps(mpiobject):
 
     def set_cell(self, cell, cell_only=False):
         # we have to check here if the box is correctly rotated in the triclinic case
-        cell = self.ff2lmp.rotate_cell(cell)
+        cell = ff2lammps.ff2lammps.rotate_cell(cell)
         if abs(cell[0,1]) > 10e-14: raise IOError("Cell is not properly rotated")
         if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
         if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
 #        cd = cell.diagonal()
-        cd = tuple(self.ff2lmp.cell2tilts(cell))
+        cd = tuple(ff2lammps.ff2lammps.cell2tilts(cell))
         if cell_only:
             self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f" % cd)
         else:
