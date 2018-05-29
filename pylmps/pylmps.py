@@ -173,6 +173,10 @@ class pylmps(mpiobject):
         assert name in evars
         return self.lmps.extract_variable(name,None,0)
 
+    def set_atoms_moved(self):
+        ''' dummy function that does not actually do amything'''
+        return
+
     def set_logger(self, default = 'none'):
         self.lmps.command("log %s" % default)
         return
@@ -306,6 +310,18 @@ class pylmps(mpiobject):
             pass
         return cellforce
 
+    def update_mol(self):
+        self.mol.set_xyz(self.get_xyz())
+        self.mol.set_cell(self.get_cell())
+        
+        return
+
+    def write(self,fname,**kwargs):
+        self.update_mol()
+        if self.is_master:
+            self.pprint('writing mol to %s' % fname)
+            self.mol.write(fname,**kwargs)
+        return 
 
     def calc_numforce(self,delta=0.0001):
         """
@@ -371,7 +387,7 @@ class pylmps(mpiobject):
         self.report_energies()
         return
         
-    def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0):
+    def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0,maxstep=20):
         assert method in ["cg", "sd"]
         thresh *= np.sqrt(3*self.natoms)
         couplings = {
@@ -381,6 +397,7 @@ class pylmps(mpiobject):
         stop = False
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
+        counter = 0
         while not stop:
             self.lmps.command("fix latmin all box/relax %s %f vmax 0.01" % (couplings[self.bcond], p))            
             self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
@@ -401,6 +418,12 @@ class pylmps(mpiobject):
 #            latiter += 1
 #            if latiter >= lat_maxiter: stop = True
             if rms_cellforce < threshlat: stop = True
+            counter += 1
+            if counter >= maxstep: stop=True
+            if hasattr(self,'trajfile')==True:
+                from molsys.fileIO import lammpstrj
+                lammpstrj.write_raw(self.trajfile,counter,self.get_natoms(),self.get_cell(),self.mol.get_elems(),
+                                    self.get_xyz(),np.zeros(self.get_natoms(),dtype='float'))
         return
             
     def LATMIN_sd(self,threshlat, thresh, lat_maxiter= 100, maxiter=500, fact = 2.0e-3, maxstep = 3.0):
@@ -415,46 +438,50 @@ class pylmps(mpiobject):
             - maxstep (float)    : Maximum stepsize (step is reduced if larger then this value)
 
         """
-        print ("\n\nLattice Minimization: using steepest descent for %d steps (threshlat=%10.5f, thresh=%10.5f)" % (lat_maxiter, threshlat, thresh))
-        print ("                      the geometry is relaxed with MIN_cg at each step for a mximum of %d steps" % maxiter)
-        print ("Initial Optimization ")
+        self.pprint ("\n\nLattice Minimization: using steepest descent for %d steps (threshlat=%10.5f, thresh=%10.5f)" % (lat_maxiter, threshlat, thresh))
+        self.pprint ("                      the geometry is relaxed with MIN_cg at each step for a mximum of %d steps" % maxiter)
+        self.pprint ("Initial Optimization ")
         self.MIN_cg(thresh, maxiter=maxiter)
         # to zero the stress tensor
         oldenergy = self.calc_energy()
         cell = self.get_cell()
-        print ("Initial cellvectors:\n%s" % np.array2string(cell,precision=4,suppress_small=True))
+        self.pprint ("Initial cellvectors:\n%s" % np.array2string(cell,precision=4,suppress_small=True))
         cellforce = self.get_cellforce()
-        print ("Initial cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
+        self.pprint ("Initial cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
         stop = False
         latiter = 1
         while not stop:
-            print ("Lattice optimization step %d" % latiter)
+            self.pprint ("Lattice optimization step %d" % latiter)
             step = fact*cellforce
             steplength = np.sqrt(np.sum(step*step))
-            print("Unconstrained step length: %10.5f Angstrom" % steplength)
+            self.pprint("Unconstrained step length: %10.5f Angstrom" % steplength)
             if steplength > maxstep:
-                print("Constraining to a maximum steplength of %10.5f" % maxstep)
+                self.pprint("Constraining to a maximum steplength of %10.5f" % maxstep)
                 step *= maxstep/steplength
             new_cell = cell + step
             # cell has to be properly rotated for lammps
             new_cell = self.ff2lmp.rotate_cell(new_cell)
-            print ("New cell:\n%s" % np.array2string(new_cell,precision=4,suppress_small=True))
+            self.pprint ("New cell:\n%s" % np.array2string(new_cell,precision=4,suppress_small=True))
             self.set_cell(new_cell)
             self.MIN_cg(thresh, maxiter=maxiter)
             energy = self.calc_energy()
             if energy > oldenergy:
-                print("WARNING: ENERGY SEEMS TO RISE!!!!!!")
+                self.pprint("WARNING: ENERGY SEEMS TO RISE!!!!!!")
             oldenergy = energy
             cell = self.get_cell()
             #print ("Current cellvectors:\n%s" % str(cell))
             cellforce = self.get_cellforce()
-            print ("Current cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
+            self.pprint ("Current cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
             rms_cellforce = np.sqrt(np.sum(cellforce*cellforce)/9.0)
-            print ("Current rms cellforce: %12.6f" % rms_cellforce)
+            self.pprint ("Current rms cellforce: %12.6f" % rms_cellforce)
             latiter += 1
+            if hasattr(self,'trajfile')==True:
+                from molsys.fileIO import lammpstrj
+                lammpstrj.write_raw(self.trajfile,latiter,self.get_natoms(),self.get_cell(),self.mol.get_elems(),
+                                    self.get_xyz(),np.zeros(self.get_natoms(),dtype='float'))
             if latiter >= lat_maxiter: stop = True
             if rms_cellforce < threshlat: stop = True
-        print ("SD minimizer done")
+        self.pprint ("SD minimizer done")
         return
 
 
