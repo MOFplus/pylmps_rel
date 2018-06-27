@@ -79,6 +79,7 @@ class ff2lammps(base):
         # thus we build our own atomtypes list combining vdw and cha and use the mol.ff.vdwdata as a source for the combined vdw params
         # but add the combined 1.0/sigma_ij here
         self.plmps_atypes = []
+        self.plmps_elems = []
         self.plmps_pair_data = {}
         self.plmps_mass = {} # mass from the element .. even if the vdw and cha type differ it is still the same atom
         for i in xrange(self._mol.get_natoms()):
@@ -88,6 +89,8 @@ class ff2lammps(base):
             if not at in self.plmps_atypes:
                 #print("new atomtype %s" % at)
                 self.plmps_atypes.append(at)
+                #self.plmps_elems.append(self._mol.elems[i].title()+str(len(self.plmps_atypes)))
+                self.plmps_elems.append(self._mol.elems[i].title())
                 # extract the mass ...
                 etup = vdwt.split("->")[1].split("|")[0]
                 etup = etup[1:-2]
@@ -253,10 +256,11 @@ class ff2lammps(base):
             cmin = np.zeros([3])
             cmax = cell.diagonal()
             tilts = (cell[1,0], cell[2,0], cell[2,1])
-        header += '%12.6f %12.6f  xlo xhi\n' % (cmin[0], cmax[0])
-        header += '%12.6f %12.6f  ylo yhi\n' % (cmin[1], cmax[1])
-        header += '%12.6f %12.6f  zlo zhi\n' % (cmin[2], cmax[2])
-        header += '%12.6f %12.6f %12.6f  xy xz yz\n' % tilts
+        if self._mol.bcond > 0:
+            header += '%12.6f %12.6f  xlo xhi\n' % (cmin[0], cmax[0])
+            header += '%12.6f %12.6f  ylo yhi\n' % (cmin[1], cmax[1])
+            header += '%12.6f %12.6f  zlo zhi\n' % (cmin[2], cmax[2])
+            header += '%12.6f %12.6f %12.6f  xy xz yz\n' % tilts
         # NOTE in lammps masses are mapped on atomtypes which indicate vdw interactions (pair potentials)
         #   => we do NOT use the masses set up in the mol object because of this mapping
         #   so we need to extract the element from the vdw paramter name which is a bit clumsy (DONE IN INIT NOW)
@@ -456,10 +460,12 @@ class ff2lammps(base):
         f.write("units real\n")
         if self._mol.bcond == 0:
             f.write("boundary f f f\n")
+            #import pdb; pdb.set_trace()
         else:
             f.write("boundary p p p\n")
         f.write("atom_style full\n")
-        f.write('box tilt large\n')
+        if self._mol.bcond > 0:
+            f.write('box tilt large\n')
         f.write("read_data %s\n\n" % self.data_filename)
         f.write("neighbor 2.0 bin\n\n")
         # extra header
