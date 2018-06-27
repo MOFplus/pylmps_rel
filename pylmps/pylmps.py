@@ -486,7 +486,8 @@ class pylmps(mpiobject):
 
 
     def MD_init(self, stage, T = None, p=None, startup = False,ensemble='nve', thermo=None, 
-            relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', log = True):
+            relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', 
+            colvar = None, log = True):
         assert bcond in ['iso', 'aniso', 'tri']
         def conversion(r):
             return r * 1000/timestep 
@@ -504,7 +505,8 @@ class pylmps(mpiobject):
         self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe\
                 ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma')
         # this is the dump command, up to know plain ascii
-#        self.lmps.command('dump %s all atom %i %s.dump' % (stage, tnstep, stage))
+        self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage, tnstep, stage))
+        self.lmps.command('dump_modify %s element %s' % (stage, string.join(self.ff2lmp.plmps_elems)))
 #        self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage,tnstep,stage))
         # do velocity startup
         if startup:
@@ -538,6 +540,9 @@ class pylmps(mpiobject):
                 raise NotImplementedError
         else:
             raise NotImplementedError
+        if colvar is not None:
+            self.lmps.command("fix col all colvars colvars.in")
+            self.md_fixes.append("col")
         return
 
     def MD_run(self, nsteps, printout=100):
