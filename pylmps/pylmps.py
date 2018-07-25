@@ -505,6 +505,7 @@ class pylmps(mpiobject):
         self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe\
                 ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma')
         # this is the dump command, up to know plain ascii
+        self.md_dumps = [stage]
         self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage, tnstep, stage))
         self.lmps.command('dump_modify %s element %s' % (stage, string.join(self.ff2lmp.plmps_elems)))
 #        self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage,tnstep,stage))
@@ -551,6 +552,9 @@ class pylmps(mpiobject):
         self.lmps.command('run %i' % nsteps)
         for fix in self.md_fixes: self.lmps.command('unfix %s' % fix)
         self.md_fixes = []
+        for dump in self.md_dumps: self.lmps.command('undump %s' % dump)
+        self.md_dumps = []
+        self.lmps.command('reset_timestep 0')
         return
 
 
