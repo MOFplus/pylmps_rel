@@ -1,8 +1,0 @@
-syntax: glob
-*~
-*.x
-*.pyc
-*.orig
-*_keep
-.swp.*
-.swp
