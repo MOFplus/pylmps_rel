@@ -1,0 +1,91 @@
+#!/usr/bin/python -i
+# -*- coding: utf-8 -*-
+
+###########################################################################
+#
+#  Script to convert (old) BB (former SBU) files into the new format
+#
+############################################################################
+
+import numpy 
+import os
+import shutil
+import sys
+import pydlpoly
+import molsys
+import h5py
+
+
+def write_xyz_to_traj(traj,xyz):
+    tshape = traj['xyz'].shape[0]
+    traj['xyz'].resize(tshape+1,axis=0)
+    traj['xyz'][-1,...] = m.get_xyz_from_frac(xyz)
+    pdlp.flush()
+    return
+
+
+print 'usage: [name] [dump] [pdlp]'
+
+name = sys.argv[1]
+dumpf = sys.argv[2]
+pdlpf = sys.argv[3]
+stagename = dumpf.rsplit('.')[0]
+# /stage/restart/cell
+# /stage/restart/vel
+# /stage/restart/xyz
+
+# /stage/traj/nstep
+# /stage/traj/tstep
+# /stage/traj/xyz
+
+m = molsys.mol()
+m.read(name+'.mfpx')
+cell = m.get_cell()
+
+df = open(dumpf,'r')
+df.readline();df.readline();df.readline()
+natoms = int(df.readline())
+xyz = numpy.zeros((natoms,3),dtype=numpy.float32)
+
+
+pdlp = h5py.File(pdlpf)
+stage= pdlp.require_group(stagename)
+traj = stage.require_group("traj")
+traj.attrs['nstep'] = 100  ## TODO: get this from the timing information in the dump file
+traj.attrs['tstep'] = 0.001
+traj.create_dataset('xyz', dtype='float32',shape=(0,natoms,3),maxshape=(None,natoms,3),chunks=(1,natoms,3))
+
+rest = stage.require_group("restart")
+rest.create_dataset('xyz',dtype='float32',shape=(natoms,3))
+rest.create_dataset('vel',dtype='float32',shape=(natoms,3))
+rest.create_dataset('cell',dtype='float32',shape=(3,3))
+rest['cell'][...] = m.get_cell()
+rest['xyz'][...] = numpy.zeros((natoms,3),dtype='float32')
+rest['vel'][...] = numpy.zeros((natoms,3),dtype='float32')
+
+nsteps = 0
+atoms=False
+for i,l in enumerate(df.xreadlines()):
+    if atoms == False:
+        if l.count('ITEM: ATOMS') == 0:
+            continue
+        else: 
+            atoms=True
+            continue
+    else:
+        if l.count('TIMESTEP') != 0:
+            write_xyz_to_traj(traj,xyz)
+            atoms=False
+            nsteps += 1
+            if nsteps % 100 == 0: print nsteps
+            continue
+        ls = l.split()
+        idx = int(ls[0])-1
+        xyz[idx] = numpy.array([float(i) for i in ls[2:5]])
+    
+
+write_xyz_to_traj(traj,xyz)
+rest['xyz'][...] = xyz
+
+
+
