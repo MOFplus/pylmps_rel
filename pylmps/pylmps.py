@@ -147,7 +147,40 @@ class pylmps(mpiobject):
         self.report_energies()
         self.md_fixes = []
         return
-    
+
+    def setup_data(self,name,datafile,inputfile,mfpx=None,mol=None,local=True,logfile='none',bcond=2,kspace = True):
+        ''' setup method for use with a lammps data file that contains the system information
+            can be used for running simulations with data generated from lammps_interface '''
+        self.start_dir = os.getcwd()  
+        self.name = name
+        if mfpx is not None:
+            self.mol = molsys.mol.from_file(mfpx)
+        else:
+            if mol is not None:
+                self.mol = mol
+            else:
+                self.pprint('warning, no mol instance created! some functions of pylmps can not be used!')
+                self.pprint('provide either the mfpx file or a mol instance as argument of setup_data')
+        self.ff2lmp = ff2lammps.ff2lammps(self.mol,setup_FF=False)
+
+        self.data_file = datafile
+        self.inp_file  = inputfile
+        if local:
+            self.rundir = self.start_dir
+        self.bcond = bcond
+        self.lmps.file(self.inp_file)
+        os.chdir(self.start_dir)
+        for e in evars:
+            self.lmps.command("variable %s equal %s" % (e, evars[e]))
+        for p in pressure:
+            self.lmps.command("variable %s equal %s" % (p,p))
+        self.lmps.command("variable vol equal vol")
+        self.lmps.command('thermo_style custom pe temp pxx pyy pzz')
+        self.calc_energy()
+        self.report_energies()
+        self.md_fixes = []
+        return
+
     def command(self, com):
         """
         perform a lammps command
