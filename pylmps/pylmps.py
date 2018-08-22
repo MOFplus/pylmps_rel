@@ -150,7 +150,40 @@ class pylmps(mpiobject):
         self.report_energies()
         self.md_fixes = []
         return
-    
+
+    def setup_data(self,name,datafile,inputfile,mfpx=None,mol=None,local=True,logfile='none',bcond=2,kspace = True):
+        ''' setup method for use with a lammps data file that contains the system information
+            can be used for running simulations with data generated from lammps_interface '''
+        self.start_dir = os.getcwd()  
+        self.name = name
+        if mfpx is not None:
+            self.mol = molsys.mol.from_file(mfpx)
+        else:
+            if mol is not None:
+                self.mol = mol
+            else:
+                self.pprint('warning, no mol instance created! some functions of pylmps can not be used!')
+                self.pprint('provide either the mfpx file or a mol instance as argument of setup_data')
+        self.ff2lmp = ff2lammps.ff2lammps(self.mol,setup_FF=False)
+
+        self.data_file = datafile
+        self.inp_file  = inputfile
+        if local:
+            self.rundir = self.start_dir
+        self.bcond = bcond
+        self.lmps.file(self.inp_file)
+        os.chdir(self.start_dir)
+        for e in evars:
+            self.lmps.command("variable %s equal %s" % (e, evars[e]))
+        for p in pressure:
+            self.lmps.command("variable %s equal %s" % (p,p))
+        self.lmps.command("variable vol equal vol")
+        self.lmps.command('thermo_style custom pe temp pxx pyy pzz')
+        self.calc_energy()
+        self.report_energies()
+        self.md_fixes = []
+        return
+
     def command(self, com):
         """
         perform a lammps command
@@ -309,6 +342,14 @@ class pylmps(mpiobject):
             # in the cubic case average diagonal terms
             avrgforce = cellforce.trace()/3.0
             cellforce = np.eye(3)*avrgforce
+        elif self.bcond == 112:
+            # JK: this one is a special boundary condition, where 
+            # - a and b are constrained to be the same
+            # - c can be different
+            avgforce = (cellforce[0,0] + cellforce[1,1]) / 2.0
+            cellforce *=  np.eye(3) 
+            cellforce[0,0] = avgforce
+            cellforce[1,1] = avgforce
         else:
             pass
         return cellforce
@@ -489,7 +530,7 @@ class pylmps(mpiobject):
 
     def MD_init(self, stage, T = None, p=None, startup = False,ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', 
-            colvar = None, log = True):
+            colvar = None, mttk_volconstraint='yes', log = True):
         assert bcond in ['iso', 'aniso', 'tri']
         def conversion(r):
             return r * 1000/timestep 
@@ -505,8 +546,9 @@ class pylmps(mpiobject):
         # in pydlpoly
         label = '%-5s' % (stage.upper()[:5])
         self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe\
-                ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma')
-        # this is the dump command, up to know plain ascii
+                ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma\
+                pxx pyy pzz pxy pxz pyz')
+        # this is the dump command, up to now plain ascii
         self.md_dumps = [stage]
         self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage, tnstep, stage))
         self.lmps.command('dump_modify %s element %s' % (stage, string.join(self.ff2lmp.plmps_elems)))
@@ -539,17 +581,24 @@ class pylmps(mpiobject):
                 self.lmps.command('fix %s_press all press/berendsen %s %12.6f %12.6f %i'% (stage,bcond,p,p,conversion(relax[1])))
                 self.lmps.command('fix %s_nve all nve' % stage)
                 self.md_fixes = ['%s_temp' % stage,'%s_press' % stage , '%s_nve' % stage]
+            elif thermo == 'mttk':
+                self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f tri %12.6f %12.6f %12.6f volconstraint %s'
+                                  % (stage,T,T,conversion(relax[0]),p,p,conversion(relax[1]),mttk_volconstraint))
+                self.lmps.command('fix_modify %s_mttknhc energy yes'% (stage,))
+                self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma pxx pyy pzz pxy pxz pyz')
+                self.md_fixes = ['%s_mttknhc'% (stage,)]
             else:
                 raise NotImplementedError
         else:
-            raise NotImplementedError
+            self.pprint('WARNING: no ensemble specified (this means no fixes are set!), continuing anyway! ')
+            #raise NotImplementedError
         if colvar is not None:
             self.lmps.command("fix col all colvars colvars.in")
             self.md_fixes.append("col")
         return
 
     def MD_run(self, nsteps, printout=100):
-        assert len(self.md_fixes) > 0
+        #assert len(self.md_fixes) > 0
         self.lmps.command('thermo %i' % printout)
         self.lmps.command('run %i' % nsteps)
         for fix in self.md_fixes: self.lmps.command('unfix %s' % fix)

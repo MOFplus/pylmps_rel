@@ -30,7 +30,7 @@ rad2deg = 180.0/np.pi
 
 class ff2lammps(base):
     
-    def __init__(self, mol):
+    def __init__(self, mol,setup_FF=True):
         """
         setup system and get parameter 
         
@@ -40,6 +40,8 @@ class ff2lammps(base):
         """
         super(ff2lammps,self).__init__(mol)
         # generate the force field
+        if setup_FF != True:
+            return
         self._mol.ff.setup_pair_potentials()
         # set up the molecules
         self._mol.addon("molecules")
