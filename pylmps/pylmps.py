@@ -30,7 +30,10 @@ wcomm = MPI.COMM_WORLD
 #    else:
 #        return
 
-from lammps import lammps
+try:
+    from lammps import lammps
+except ImportError:
+    print("ImportError: Impossible to load lammps")
 
 
 evars = {
@@ -311,9 +314,8 @@ class pylmps(mpiobject):
         return cellforce
 
     def update_mol(self):
-        self.mol.set_xyz(self.get_xyz())
         self.mol.set_cell(self.get_cell())
-        
+        self.mol.set_xyz(self.get_xyz())
         return
 
     def write(self,fname,**kwargs):
