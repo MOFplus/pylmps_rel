@@ -162,7 +162,10 @@ class pylmps(mpiobject):
                 self.pprint('warning, no mol instance created! some functions of pylmps can not be used!')
                 self.pprint('provide either the mfpx file or a mol instance as argument of setup_data')
         self.ff2lmp = ff2lammps.ff2lammps(self.mol,setup_FF=False)
-
+        # update here the ff2lmp data by retrieving the atom types from the input file
+        atype_infos = [x.split()[3] for x in open(datafile).read().split('Masses')[-1].split('Bond Coeffs')[0].split('\n') if x != '']
+        self.ff2lmp.plmps_elems = [x[0:2].split('_')[0].title() for x in atype_infos]
+        self.ff2lmp.plmps_atypes = atype_infos 
         self.data_file = datafile
         self.inp_file  = inputfile
         if local:
@@ -580,8 +583,13 @@ class pylmps(mpiobject):
                 self.lmps.command('fix %s_nve all nve' % stage)
                 self.md_fixes = ['%s_temp' % stage,'%s_press' % stage , '%s_nve' % stage]
             elif thermo == 'mttk':
-                self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f tri %12.6f %12.6f %12.6f volconstraint %s'
+                if hasattr(p,'__iter__'):
+                    self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f tri %12.6f %12.6f %12.6f volconstraint %s'
+                                  % (stage,T,T,conversion(relax[0]),p[0],p[1],conversion(relax[1]),mttk_volconstraint))
+                else:
+                    self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f tri %12.6f %12.6f %12.6f volconstraint %s'
                                   % (stage,T,T,conversion(relax[0]),p,p,conversion(relax[1]),mttk_volconstraint))
+
                 self.lmps.command('fix_modify %s_mttknhc energy yes'% (stage,))
                 self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma pxx pyy pzz pxy pxz pyz')
                 self.md_fixes = ['%s_mttknhc'% (stage,)]
