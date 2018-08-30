@@ -593,7 +593,7 @@ class pylmps(mpiobject):
             self.pprint('WARNING: no ensemble specified (this means no fixes are set!), continuing anyway! ')
             #raise NotImplementedError
         if colvar is not None:
-            self.lmps.command("fix col all colvars colvars.in")
+            self.lmps.command("fix col all colvars %s" %  colvar)
             self.md_fixes.append("col")
         return
 
