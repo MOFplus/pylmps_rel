@@ -98,7 +98,8 @@ class ff2lammps(base):
                 etup = etup[1:-2]
                 e = etup.split("_")[0]
                 e = filter(lambda x: x.isalpha(), e)
-                self.plmps_mass[at] = elements.mass[e]
+                #self.plmps_mass[at] = elements.mass[e]
+                self.plmps_mass[at] = elements.mass[self.plmps_elems[-1].lower()]
                 #print("with mass %12.6f" % elements.mass[e])
         for i, ati in enumerate(self.plmps_atypes):
             for j, atj in enumerate(self.plmps_atypes[i:],i):

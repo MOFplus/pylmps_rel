@@ -1,0 +1,19 @@
+cd src
+
+make yes-USER-COLVARS
+make yes-CLASS2
+make yes-KSPACE
+make yes-MANYBODY
+make yes-MC
+make yes-USER-MOFFF
+make yes-USER-MISC
+make yes-MOLECULE
+
+
+cd ../lib/colvars/
+make -f Makefile.g++
+cd ../../src/
+make mode=shlib mpi
+cd ../python
+ln -s ../src/liblammps.so .
+ln -s ../src/liblammps_mpi.so .
