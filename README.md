@@ -30,6 +30,12 @@ Mandatory dependencies are:
 Lammps needs to be built as a shared library. The following list is our default way of compiling it 
 (version from 2017 or newer necessary, since the USER-MOFFF package is from 2017)
 
+Note on installing Lammps with the mttk barostat implementation of the ghent group
+* clone (this repository)[https://github.com/stevenvdb/lammps].
+* switch to the newbarostat branch before you continue with the rest of the installation via
+```
+git checkout newbarostat
+```
 cd to the lammps directory and install via
 
 ```
