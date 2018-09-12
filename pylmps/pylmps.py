@@ -553,11 +553,15 @@ class pylmps(mpiobject):
                 pxx pyy pzz pxy pxz pyz')
         # this is the dump command, up to now plain ascii
         self.md_dumps = [stage]
+        # TBI do this more clever
+        self.lmps.command("change_box all ortho")
         self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage, tnstep, stage))
         self.lmps.command('dump_modify %s element %s' % (stage, string.join(self.ff2lmp.plmps_elems)))
-#        self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage,tnstep,stage))
+        self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
+        if not traj is None:
+            self.lmps.command("dump %s all pdlp %i %s.pdlp stage %s xyz" % (stage+"_pdlp", tnstep, self.name, stage))
         # do velocity startup
-        if startup:
+        if startup is True:
             self.lmps.command('velocity all create %12.6f 42 rot yes dist gaussian' % (T))
         # apply fix
         if ensemble == 'nve':

@@ -1,0 +1,39 @@
+
+lammps_src
+==========
+
+This dir contains C++ code to be used in lammps in connection with the pylmps wrapper.
+In order to use it, copy the <name>.cpp and <name.h> files to the /src directory of
+your current lammps version (recommended: pull stable from github).
+Then recompile. In certain cases further steps are necessary, see below.
+                                                            (RS)
+
+
+dump_pdlp
+---------
+
+Adds a dump style to lammps that allows to write HDF5 files (including restart, system and
+trajectory data) to a HDF5 file in the pdlp format (traditionally used with pydlpoly). Note
+that this code only adds to exisiting datasets and it *must* be used in connection with
+pylmps.
+
+Inorder to compile the library libhdf5 and hdf5.h must be accesible. The most straight forward way
+to get this working is to install first the h5md extension. IF you get this compiled the path to 
+the library and header file of HDF% are available and the dump_pdlp extension should compile easily.
+
+Follow these steps to add the h5md extension:
+- in the lammps dir "cd lib/h5md"
+- compile the ch5md library with "make -f Makefile.h5cc"
+- In order to access the hdf5 files you might have to edit the file Makefile.lammps
+  Mine looks like this (UBUNTU based MINT):
+  
+  h5md_SYSINC = -I/usr/include/hdf5/serial
+  h5md_SYSLIB = -L/usr/lib/x86_64-linux-gnu/hdf5/serial/ -lhdf5
+
+  the first entry points to the leader file (try "locate hdf5.h" to find it)
+  the second entry points to the lib (try "locate libhdf5")
+- Now cd back to the /src directoy "cd ../../src"
+- switch extension on with "make yes-USER-H5MD"
+- recompile with "make mode=shlib mpi"
+
+
