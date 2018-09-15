@@ -82,11 +82,11 @@ DumpPDLP::DumpPDLP(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
   every_dump = force->inumeric(FLERR,arg[3]);
   
   every_xyz = -1;
-  /* RS
-  every_position = every_image = -1;
-  every_velocity = every_force = every_species = -1;
-  every_charge = -1;
-  */
+  every_image = -1;
+  every_vel = -1;
+  every_forces = -1;
+  every_charges = -1;
+  every_cell = -1;
 
   int iarg=5;
   int n_parsed, default_every;
@@ -112,96 +112,43 @@ DumpPDLP::DumpPDLP(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
         error->all(FLERR, "Illegal dump pdlp command: stage name argument repeated");
       }
       iarg+=2;
-    /*  RS
-    } else if (strcmp(arg[iarg], "image")==0) {
-      if (every_position<0) error->all(FLERR, "Illegal dump h5md command");
+    } else if (strcmp(arg[iarg], "xyz_img")==0) {
+      if (every_xyz<0) error->all(FLERR, "Illegal dump pdlp command");
       iarg+=1;
       size_one+=domain->dimension;
-      every_image = every_position;
-    } else if (strcmp(arg[iarg], "velocity")==0) {
-      every_velocity = default_every;
+      every_image = every_xyz;
+    } else if (strcmp(arg[iarg], "vel")==0) {
+      every_vel = default_every;
       iarg+=1;
-      n_parsed = element_args(narg-iarg, &arg[iarg], &every_velocity);
+      n_parsed = element_args(narg-iarg, &arg[iarg], &every_vel);
       if (n_parsed<0) error->all(FLERR, "Illegal dump h5md command");
       iarg += n_parsed;
       size_one+=domain->dimension;
-    } else if (strcmp(arg[iarg], "force")==0) {
-      every_force = default_every;
+    } else if (strcmp(arg[iarg], "forces")==0) {
+      every_forces = default_every;
       iarg+=1;
-      n_parsed = element_args(narg-iarg, &arg[iarg], &every_force);
+      n_parsed = element_args(narg-iarg, &arg[iarg], &every_forces);
       if (n_parsed<0) error->all(FLERR, "Illegal dump h5md command");
       iarg += n_parsed;
       size_one+=domain->dimension;
-    } else if (strcmp(arg[iarg], "species")==0) {
-      every_species=default_every;
-      iarg+=1;
-      n_parsed = element_args(narg-iarg, &arg[iarg], &every_species);
-      if (n_parsed<0) error->all(FLERR, "Illegal dump h5md command");
-      iarg += n_parsed;
-      size_one+=1;
-    } else if (strcmp(arg[iarg], "charge")==0) {
+    } else if (strcmp(arg[iarg], "charges")==0) {
       if (!atom->q_flag)
-        error->all(FLERR, "Requesting non-allocated quantity q in dump_h5md");
-      every_charge = default_every;
+        error->all(FLERR, "Requesting non-allocated quantity q in dump_pdlp");
+      every_charges = default_every;
       iarg+=1;
-      n_parsed = element_args(narg-iarg, &arg[iarg], &every_charge);
-      if (n_parsed<0) error->all(FLERR, "Illegal dump h5md command");
+      n_parsed = element_args(narg-iarg, &arg[iarg], &every_charges);
+      if (n_parsed<0) error->all(FLERR, "Illegal dump pdlp command");
       iarg += n_parsed;
       size_one+=1;
-    } else if (strcmp(arg[iarg], "file_from")==0) {
-      if (iarg+1>=narg) {
-        error->all(FLERR, "Invalid number of arguments in dump h5md");
-      }
-      if (box_is_set||create_group_is_set)
-        error->all(FLERR, "Cannot set file_from in dump h5md after box or create_group");
-      int idump;
-      for (idump = 0; idump < output->ndump; idump++)
-        if (strcmp(arg[iarg+1],output->dump[idump]->id) == 0) break;
-      if (idump == output->ndump) error->all(FLERR,"Cound not find dump_modify ID");
-      datafile_from_dump = idump;
-      do_box=false;
-      create_group=false;
-      iarg+=2;
-    } else if (strcmp(arg[iarg], "box")==0) {
-      if (iarg+1>=narg) {
-        error->all(FLERR, "Invalid number of arguments in dump h5md");
-      }
-      box_is_set = true;
-      if (strcmp(arg[iarg+1], "yes")==0)
-        do_box=true;
-      else if (strcmp(arg[iarg+1], "no")==0)
-        do_box=false;
-      else
-        error->all(FLERR, "Illegal dump h5md command");
-      iarg+=2;
-    } else  if (strcmp(arg[iarg], "create_group")==0) {
-      if (iarg+1>=narg) {
-        error->all(FLERR, "Invalid number of arguments in dump h5md");
-      }
-      create_group_is_set = true;
-      if (strcmp(arg[iarg+1], "yes")==0)
-        create_group=true;
-      else if (strcmp(arg[iarg+1], "no")==0) {
-        create_group=false;
-      }
-      else
-        error->all(FLERR, "Illegal dump h5md command");
-      iarg+=2;
-    } else if (strcmp(arg[iarg], "author")==0) {
-      if (iarg+1>=narg) {
-        error->all(FLERR, "Invalid number of arguments in dump h5md");
-      }
-      if (author_name==NULL) {
-        author_name = new char[strlen(arg[iarg])+1];
-        strcpy(author_name, arg[iarg+1]);
-      } else {
-        error->all(FLERR, "Illegal dump h5md command: author argument repeated");
-      }
-      iarg+=2;
-    */
     } else {
       error->all(FLERR, "Invalid argument to dump h5md");
     }
+  printf("DUMP PDLP .. all arguments parsed\n");
+  printf("every_xyz %d\n", every_xyz);
+  printf("every_vel %d\n", every_vel);
+  printf("every_forces %d\n", every_forces);
+  printf("every_charges %d\n", every_charges);
+  printf("every_cell %d\n", every_cell);
   }
 
   // allocate global array for atom coords
@@ -211,18 +158,14 @@ DumpPDLP::DumpPDLP(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
 
   if (every_xyz>=0)
     memory->create(dump_xyz,domain->dimension*natoms,"dump:xyz");
-  /* RS
   if (every_image>=0)
-    memory->create(dump_image,domain->dimension*natoms,"dump:image");
-  if (every_velocity>=0)
-    memory->create(dump_velocity,domain->dimension*natoms,"dump:velocity");
-  if (every_force>=0)
-    memory->create(dump_force,domain->dimension*natoms,"dump:force");
-  if (every_species>=0)
-    memory->create(dump_species,natoms,"dump:species");
-  if (every_charge>=0)
-    memory->create(dump_charge,natoms,"dump:charge");
-  */
+    memory->create(dump_img,domain->dimension*natoms,"dump:xyz_img");
+  if (every_vel>=0)
+    memory->create(dump_vel,domain->dimension*natoms,"dump:vel");
+  if (every_forces>=0)
+    memory->create(dump_forces,domain->dimension*natoms,"dump:forces");
+  if (every_charges>=0)
+    memory->create(dump_charges,natoms,"dump:charges");
 
   // RS here the file is opened .. we need to see if we can just pass the hid_t of the hdf5 file and access it
   openfile();
@@ -236,33 +179,24 @@ DumpPDLP::~DumpPDLP()
   //  needs fixing!! RS
   if (every_xyz>=0) {
     memory->destroy(dump_xyz);
-    if (me==0) {
-      H5Dclose(xyz_dset);
-
-    }
+    if (me==0) H5Dclose(xyz_dset);    
   }
-  /* RS
   if (every_image>=0) {
-    memory->destroy(dump_image);
-    if (me==0) h5md_close_element(particles_data.image);
+    memory->destroy(dump_img);
+    if (me==0) H5Dclose(img_dset);    
   }
-  if (every_velocity>=0) {
-    memory->destroy(dump_velocity);
-    if (me==0) h5md_close_element(particles_data.velocity);
+  if (every_vel>=0) {
+    memory->destroy(dump_vel);
+    if (me==0) H5Dclose(vel_dset);    
   }
-  if (every_force>=0) {
-    memory->destroy(dump_force);
-    if (me==0) h5md_close_element(particles_data.force);
+  if (every_forces>=0) {
+    memory->destroy(dump_forces);
+    if (me==0) H5Dclose(forces_dset);    
   }
-  if (every_species>=0) {
-    memory->destroy(dump_species);
-    if (me==0) h5md_close_element(particles_data.species);
+  if (every_charges>=0) {
+    memory->destroy(dump_charges);
+    if (me==0) H5Dclose(charges_dset);    
   }
-  if (every_charge>=0) {
-    memory->destroy(dump_charge);
-    if (me==0) h5md_close_element(particles_data.charge);
-  }
-  */
   if (me==0){
     H5Gclose(traj_group);
     H5Gclose(stage_group);
@@ -283,30 +217,43 @@ void DumpPDLP::init_style()
 void DumpPDLP::openfile()
 {
   int dims[2];
-  /*
-  char *boundary[3];
-  for (int i=0; i<3; i++) {
-    boundary[i] = new char[9];
-    if (domain->periodicity[i]==1) {
-      strcpy(boundary[i], "periodic");
-    } else {
-      strcpy(boundary[i], "none");
-    }
-  }
-  */
-
+ 
   if (me == 0) {
     // me == 0 _> do only on master node
     
     pdlpfile = H5Fopen(filename, H5F_ACC_RDWR, H5P_DEFAULT);
     stage_group = H5Gopen(pdlpfile, stage_name, H5P_DEFAULT);
     traj_group  = H5Gopen(stage_group, "traj", H5P_DEFAULT);
+    restart_group = H5Gopen(stage_group, "restart", H5P_DEFAULT);
+    printf("pdlp file opened   %d %d %d %d\n", pdlpfile, stage_group, traj_group, restart_group);
 
-    if (every_xyz>0)
+    if (every_xyz>0) {
       xyz_dset    = H5Dopen(traj_group, "xyz", H5P_DEFAULT);
+      printf("pdlp xyz dset opened\n");
+    }
+    if (every_image>0) {
+      img_dset    = H5Dopen(traj_group, "imgidx", H5P_DEFAULT);
+      printf("pdlp img dset opened\n");
+    }
+    if (every_vel>0) {
+      vel_dset    = H5Dopen(traj_group, "vel", H5P_DEFAULT);
+      printf("pdlp vel dset opened\n");
+    }
+    if (every_forces>0) {
+      forces_dset = H5Dopen(traj_group, "forces", H5P_DEFAULT);
+      printf("pdlp forces dset opened\n");
+    }
+    if (every_charges>0) {
+      charges_dset = H5Dopen(traj_group, "charges", H5P_DEFAULT);
+      printf("pdlp charges dset opened\n");
+    }
+    if (every_restart>0) {
+      rest_xyz_dset = H5Dopen(restart_group, "xyz", H5P_DEFAULT);
+      rest_vel_dset = H5Dopen(restart_group, "vel", H5P_DEFAULT);
+      rest_cell_dset = H5Dopen(restart_group, "cell", H5P_DEFAULT);
+      printf("pdlp restart dsets opened\n");
+    }
 
-    printf("DEBUG : hdf5 IDs  %d %d %d %d\n", pdlpfile, stage_group, traj_group, xyz_dset);
-    // only needed if we generate the memspace/dataspace etc here once
     dims[0] = natoms;
     dims[1] = domain->dimension;
   }
@@ -327,12 +274,10 @@ void DumpPDLP::pack(tagint *ids)
 
   tagint *tag = atom->tag;
   double **x = atom->x;
-  /*
   double **v = atom->v;
   double **f = atom->f;
-  int *species = atom->type;
   double *q = atom->q;
-  */
+
   imageint *image = atom->image;
 
   int *mask = atom->mask;
@@ -359,30 +304,22 @@ void DumpPDLP::pack(tagint *ids)
           buf[m++] = x[i][1];
           if (dim>2) buf[m++] = x[i][2];
         }
-        /*
         if (every_image>=0) {
           buf[m++] = ix;
           buf[m++] = iy;
           if (dim>2) buf[m++] = iz;
         }
-        */
       }
-      /*
-      if (every_velocity>=0) {
+      if (every_vel>=0) {
         buf[m++] = v[i][0];
         buf[m++] = v[i][1];
         if (dim>2) buf[m++] = v[i][2];
       }
-      if (every_force>=0) {
+      if (every_forces>=0) {
         buf[m++] = f[i][0];
         buf[m++] = f[i][1];
         if (dim>2) buf[m++] = f[i][2];
       }
-      if (every_species>=0)
-        buf[m++] = species[i];
-      if (every_charge>=0)
-        buf[m++] = q[i];
-      */
       ids[n++] = tag[i];
     }
 }
@@ -396,39 +333,31 @@ void DumpPDLP::write_data(int n, double *mybuf)
   int m = 0;
   int dim = domain->dimension;
   int k = dim*ntotal;
-  /*
-  int k_image = dim*ntotal;
-  int k_velocity = dim*ntotal;
-  int k_force = dim*ntotal;
-  int k_species = ntotal;
-  int k_charge = ntotal;
-  */
+  int k_img = dim*ntotal;
+  int k_vel = dim*ntotal;
+  int k_frc = dim*ntotal;
+  int k_chg = ntotal;
+
   for (int i = 0; i < n; i++) {
     if (every_xyz>=0) {
       for (int j=0; j<dim; j++) {
         dump_xyz[k++] = mybuf[m++];
       }
-      /*
       if (every_image>=0)
         for (int j=0; j<dim; j++) {
-          dump_image[k_image++] = mybuf[m++];
+          dump_img[k_img++] = mybuf[m++];
         }
-      */
     }
-    /*
-    if (every_velocity>=0)
+    if (every_vel>=0)
       for (int j=0; j<dim; j++) {
-        dump_velocity[k_velocity++] = mybuf[m++];
+        dump_vel[k_vel++] = mybuf[m++];
       }
-    if (every_force>=0)
+    if (every_forces>=0)
       for (int j=0; j<dim; j++) {
-        dump_force[k_force++] = mybuf[m++];
+        dump_forces[k_frc++] = mybuf[m++];
       }
-    if (every_species>=0)
-      dump_species[k_species++] = mybuf[m++];
-    if (every_charge>=0)
-      dump_charge[k_charge++] = mybuf[m++];
-    */
+    if (every_charges>=0)
+      dump_charges[k_chg++] = mybuf[m++];
     ntotal++;
   }
 
@@ -464,133 +393,82 @@ int DumpPDLP::modify_param(int narg, char **arg)
 
 void DumpPDLP::write_frame()
 {
-  herr_t  status;
-  hsize_t dims[3], start[3], count[3];
-  hid_t   fspace, mspace;
-
   int local_step;
   double local_time;
-  double edges[3];
+  double cell[9];
   int i;
+  int statcode;
+
   local_step = update->ntimestep;
   local_time = local_step * update->dt;
-  edges[0] = boxxhi - boxxlo;
-  edges[1] = boxyhi - boxylo;
-  edges[2] = boxzhi - boxzlo;
-
-  printf("DEBUG: this is write frame every_dump=%d every_xyz=%d local_step=%d\n", every_dump,every_xyz,local_step);
+  for (i=0; i<9; i++) cell[i] = 0.0;
+  cell[0] = boxxhi - boxxlo;
+  cell[4] = boxyhi - boxylo;
+  cell[8] = boxzhi - boxzlo;
   
   if (every_xyz>0) {
     if (local_step % (every_xyz*every_dump) == 0) {
-      // get fspace of dataset
-      fspace = H5Dget_space(xyz_dset);
-      // get current dims
-      H5Sget_simple_extent_dims(fspace, dims, NULL);
-
-      printf("DEBUG: in pdlp dump, dims before extend: %llu %llu %llu\n", dims[0], dims[1], dims[2]);
-      printf("xyz first numbers %12.6f %12.6f %12.6f\n", dump_xyz[0], dump_xyz[1], dump_xyz[2]);
-
-
-      // increment by one frame
-      dims[0] += 1;
-      status = H5Dset_extent(xyz_dset, dims);
-      if (status<0){
-        printf("Extending pdlp dataset went wrong! status is %d\n", status);
-      }
-      H5Sclose(fspace);
-
-      // Now get fspace again
-      fspace = H5Dget_space(xyz_dset);
-      // generate a mspace for the data in memory
-      mspace = H5Screate_simple(2, dims+1, NULL);
-      // create start and offset
-      start[0] = dims[0]-1;
-      count[0] = 1;
-      for (i=1; i<3; i++) {
-        start[i] = 0;
-        count[i] = dims[i];
-      }
-      // select part of file to be writen
-      status = H5Sselect_hyperslab(fspace, H5S_SELECT_SET, start, NULL, count, NULL);
-      if (status<0){
-        printf("Selecting hyperslab went wrong! status is %d\n", status);
-      }
-      printf("DEBUG: in pdlp dump, start: %llu %llu %llu\n", start[0], start[1], start[2]);
-      printf("DEBUG: in pdlp dump, count: %llu %llu %llu\n", count[0], count[1], count[2]);
-      // write the data
-      status = H5Dwrite(xyz_dset, H5T_IEEE_F64LE, mspace, fspace, H5P_DEFAULT, dump_xyz);
-      if (status<0){
-        printf("Writing data went wrong! status is %d\n", status);
-      }      
-      // close selections
-      H5Sclose(fspace);
-      H5Sclose(mspace);
-      /*
-      if (every_image>0)
-        h5md_append(particles_data.image, dump_image, local_step, local_time);
-      */
+      statcode = append_data(xyz_dset, 3, dump_xyz);
     }
-  /*
-  } else {
-    if (do_box) h5md_append(particles_data.box_edges, edges, local_step, local_time);
   }
-  if (every_velocity>0 && local_step % (every_velocity*every_dump) == 0) {
-    h5md_append(particles_data.velocity, dump_velocity, local_step, local_time);
+  if (every_cell>0 && local_step % (every_cell*every_dump) == 0) {
+    statcode = append_data(cell_dset, 3, dump_cell);
+  }  
+  if (every_vel>0 && local_step % (every_vel*every_dump) == 0) {
+    statcode = append_data(vel_dset, 3, dump_vel);
   }
-  if (every_force>0 && local_step % (every_force*every_dump) == 0) {
-    h5md_append(particles_data.force, dump_force, local_step, local_time);
+  if (every_forces>0 && local_step % (every_forces*every_dump) == 0) {
+    statcode = append_data(forces_dset, 3, dump_forces);
   }
-  if (every_species>0 && local_step % (every_species*every_dump) == 0) {
-    h5md_append(particles_data.species, dump_species, local_step, local_time);
-  }
-  if (every_charge>0 && local_step % (every_charge*every_dump) == 0) {
-    h5md_append(particles_data.charge, dump_charge, local_step, local_time);
-  */
+  if (every_charges>0 && local_step % (every_charges*every_dump) == 0) {
+    statcode = append_data(charges_dset, 2, dump_charges);
   }
 }
 
-/*
-void DumpPDLP::write_fixed_frame()
+int DumpPDLP::append_data(hid_t dset, int rank, double *dump)
 {
-  double edges[3];
-  int dims[2];
-  char *boundary[3];
-
-  for (int i=0; i<3; i++) {
-    boundary[i] = new char[9];
-    if (domain->periodicity[i]==1) {
-      strcpy(boundary[i], "periodic");
-    } else {
-      strcpy(boundary[i], "none");
-    }
+  herr_t  status;
+  hsize_t dims[rank], start[rank], count[rank];
+  hid_t   fspace, mspace;
+  int i;
+  
+  fspace = H5Dget_space(dset);
+  // get current dims
+  H5Sget_simple_extent_dims(fspace, dims, NULL);
+  // increment by one frame
+  dims[0] += 1;
+  status = H5Dset_extent(dset, dims);
+  H5Sclose(fspace);
+  if (status<0){
+    printf("Extending pdlp dataset went wrong! status is %d\n", status);
+    return -1;
   }
-
-  dims[0] = natoms;
-  dims[1] = domain->dimension;
-
-  edges[0] = boxxhi - boxxlo;
-  edges[1] = boxyhi - boxylo;
-  edges[2] = boxzhi - boxzlo;
-  if (every_position==0) {
-    particles_data.position = h5md_create_fixed_data_simple(particles_data.group, "position", 2, dims, H5T_NATIVE_DOUBLE, dump_position);
-    h5md_create_box(&particles_data, dims[1], boundary, false, edges, NULL);
-    if (every_image==0)
-      particles_data.image = h5md_create_fixed_data_simple(particles_data.group, "image", 2, dims, H5T_NATIVE_INT, dump_image);
+  // Now get fspace again
+  fspace = H5Dget_space(xyz_dset);
+  // create start and offset
+  start[0] = dims[0]-1;
+  count[0] = 1;
+  for (i=1; i<rank; i++) {
+    start[i] = 0;
+    count[i] = dims[i];
   }
-  if (every_velocity==0)
-    particles_data.velocity = h5md_create_fixed_data_simple(particles_data.group, "velocity", 2, dims, H5T_NATIVE_DOUBLE, dump_velocity);
-  if (every_force==0)
-    particles_data.force = h5md_create_fixed_data_simple(particles_data.group, "force", 2, dims, H5T_NATIVE_DOUBLE, dump_force);
-  if (every_species==0)
-    particles_data.species = h5md_create_fixed_data_simple(particles_data.group, "species", 1, dims, H5T_NATIVE_INT, dump_species);
-  if (every_charge==0) {
-    particles_data.charge = h5md_create_fixed_data_simple(particles_data.group, "charge", 1, dims, H5T_NATIVE_INT, dump_charge);
-    h5md_write_string_attribute(particles_data.group, "charge", "type", "effective");
+  // select part of file to be writen
+  status = H5Sselect_hyperslab(fspace, H5S_SELECT_SET, start, NULL, count, NULL);
+  if (status<0){
+    printf("Selecting hyperslab went wrong! status is %d\n", status);
+    H5Sclose(fspace);
+    return -2;
   }
-
-  for (int i=0; i<3; i++) {
-    delete [] boundary[i];
-  }
+  // generate a mspace for the data in memory
+  mspace = H5Screate_simple(rank-1, dims+1, NULL);
+  // write the data
+  status = H5Dwrite(dset, H5T_IEEE_F64LE, mspace, fspace, H5P_DEFAULT, dump);
+  // close selections
+  H5Sclose(fspace);
+  H5Sclose(mspace);
+  if (status<0){
+    printf("Writing data went wrong! status is %d\n", status);
+    return -3;
+  }      
+return 0;
 }
-
-*/

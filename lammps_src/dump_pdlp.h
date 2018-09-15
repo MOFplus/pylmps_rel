@@ -40,25 +40,33 @@ class DumpPDLP : public Dump {
   int natoms,ntotal;
   int unwrap_flag;            // 1 if atom coords are unwrapped, 0 if no
   hid_t pdlpfile;
-  hid_t stage_group, traj_group;
+  hid_t stage_group, traj_group, restart_group;
+  hid_t rest_xyz_dset, rest_vel_dset, rest_cell_dset;
+
   hid_t xyz_dset;
+  hid_t img_dset;
+  hid_t vel_dset;
+  hid_t forces_dset;
+  hid_t charges_dset;
+  hid_t cell_dset;
 
   // data arrays and intervals
   int every_dump;
   double *dump_xyz;
   int every_xyz;
-  /*
-  int *dump_image;
+  
+  int *dump_img;
   int every_image;
-  double *dump_velocity;
-  int every_velocity;
-  double *dump_force;
-  int every_force;
-  int *dump_species;
-  int every_species;
-  int *dump_charge;
-  int every_charge;
-  */
+  double *dump_vel;
+  int every_vel;
+  double *dump_forces;
+  int every_forces;
+  double *dump_charges;
+  int every_charges;
+  double *dump_cell;
+  int every_cell;
+
+  int every_restart;
 
   void init_style();
   int modify_param(int, char **);
@@ -68,7 +76,7 @@ class DumpPDLP : public Dump {
   void write_data(int, double *);
 
   void write_frame();
-  //void write_fixed_frame();
+  int append_data(hid_t, int, double *);
 };
 
 }
