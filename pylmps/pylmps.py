@@ -30,6 +30,8 @@ wcomm = MPI.COMM_WORLD
 #    else:
 #        return
 
+from molsys.util import pdlpio2
+
 try:
     from lammps import lammps
 except ImportError:
@@ -66,9 +68,11 @@ class pylmps(mpiobject):
         self.control["oop_umbrella"] = False
         self.control["kspace_gewald"] = 0.0
         self.control["cutoff"] = 12.0
+        # defaults
+        self.pdlp = None
         return
 
-    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", 
+    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
             logfile = 'none', bcond=2, kspace = False):
         self.control["kspace"] = kspace
 #        cmdargs = ['-log', logfile]
@@ -80,22 +84,35 @@ class pylmps(mpiobject):
         # if par is given or ff="file" we use mfpx/ric/par
         # if mol is given then this is expected to be an already assigned mol object
         #      (in the latter case everything else is ignored!)
-        self.start_dir = os.getcwd()
+        self.start_dir = os.getcwd()+"/"
+        # set the pdlp filename
+        if pdlp is None:
+            self.pdlpname = self.start_dir + self.name + ".pdlp"
+        else:
+            self.pdlpname = self.start_dir + pdlp
+        # get the mol instance either directly or from file
         if mol != None:
             self.mol = mol
         else:
-            # we need to make a molsys and read it in
-            self.mol = molsys.mol()
-            if mfpx == None:
-                mfpx = self.name + ".mfpx"
-            self.mol.read(mfpx)
-            self.mol.addon("ff")
-            if par or ff=="file":
-                if par == None:
-                    par = self.name
-                self.mol.ff.read(par)
+            if restart is not None:
+                # The mol object should be read from the pdlp file
+                self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self, restart=restart)
+                self.mol  = self.pdlp.get_mol_from_system()
             else:
-                self.mol.ff.assign_params(ff)
+                # we need to make a molsys and read it in
+                self.mol = molsys.mol()
+                if mfpx == None:
+                    mfpx = self.name + ".mfpx"
+                self.mol.read(mfpx)
+            # get the forcefield if this is not done already (if addon is there assume params are exisiting .. TBI a flag in ff addon to indicate that params are set up)
+            if not "ff" in self.mol.loaded_addons:
+                self.mol.addon("ff")
+                if par or ff=="file":
+                    if par == None:
+                        par = self.name
+                    self.mol.ff.read(par)
+                else:
+                    self.mol.ff.assign_params(ff)
         # now generate the converter
         self.ff2lmp = ff2lammps.ff2lammps(self.mol)
         # adjust the settings
@@ -149,6 +166,9 @@ class pylmps(mpiobject):
         self.calc_energy()
         self.report_energies()
         self.md_fixes = []
+        # Now connect pdlpio (using pdlpio2)
+        if self.pdlp is None:
+            self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self)
         return
 
     def setup_data(self,name,datafile,inputfile,mfpx=None,mol=None,local=True,logfile='none',bcond=2,kspace = True):
