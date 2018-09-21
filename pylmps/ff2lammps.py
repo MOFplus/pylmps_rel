@@ -243,12 +243,14 @@ class ff2lammps(base):
         xyz = self._mol.get_xyz()
         if self._mol.bcond == 0:
             # in the nonperiodic case center the molecule in the origin
+            # JK: Lammps wants a box also in the non-periodic (free) case.
+            self._mol.periodic=False
             self._mol.translate(-self._mol.get_com())
             cmax = xyz.max(axis=0)+10.0
-            cmin = -xyz.min(axis=0)-10.0
+            cmin = xyz.min(axis=0)-10.0
             tilts = (0.0,0.0,0.0)
         elif self._mol.bcond<2:
-            # orthorombic/cubic bcond
+            # orthorombic/cubic bcondq
             cell = self._mol.get_cell()
             cmin = np.zeros([3])
             cmax = cell.diagonal()
@@ -259,10 +261,11 @@ class ff2lammps(base):
             cmin = np.zeros([3])
             cmax = cell.diagonal()
             tilts = (cell[1,0], cell[2,0], cell[2,1])
-        if self._mol.bcond > 0:
+        if self._mol.bcond >= 0:
             header += '%12.6f %12.6f  xlo xhi\n' % (cmin[0], cmax[0])
             header += '%12.6f %12.6f  ylo yhi\n' % (cmin[1], cmax[1])
             header += '%12.6f %12.6f  zlo zhi\n' % (cmin[2], cmax[2])
+        if self._mol.bcond > 2:
             header += '%12.6f %12.6f %12.6f  xy xz yz\n' % tilts
         # NOTE in lammps masses are mapped on atomtypes which indicate vdw interactions (pair potentials)
         #   => we do NOT use the masses set up in the mol object because of this mapping
@@ -467,7 +470,8 @@ class ff2lammps(base):
         else:
             f.write("boundary p p p\n")
         f.write("atom_style full\n")
-        if self._mol.bcond > 0:
+        #if self._mol.bcond > 0:
+        if self._mol.bcond > 2:
             f.write('box tilt large\n')
         f.write("read_data %s\n\n" % self.data_filename)
         f.write("neighbor 2.0 bin\n\n")
