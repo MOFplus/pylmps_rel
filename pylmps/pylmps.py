@@ -70,6 +70,14 @@ class pylmps(mpiobject):
         self.control["cutoff"] = 12.0
         # defaults
         self.pdlp = None
+        self.md_dumps = []
+        # datafuncs
+        self.data_funcs = {\
+            "xyz"   : self.get_xyz,\
+            "vel"   : self.get_vel,\
+            "force" : self.get_force,\
+            "cell"  : self.get_cell,\
+        }
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
@@ -283,7 +291,15 @@ class pylmps(mpiobject):
         xyz = np.ctypeslib.as_array(self.lmps.gather_atoms("x",1,3))
         xyz.shape=(self.natoms,3)
         return xyz
-        
+
+    def get_vel(self):
+        """
+        get the velocity as a numpy array
+        """
+        vel = np.ctypeslib.as_array(self.lmps.gather_atoms("v",1,3))
+        vel.shape=(self.natoms,3)
+        return vel
+
     def get_cell_volume(self):
         """ 
         get the cell volume from lammps variable vol
@@ -452,6 +468,8 @@ class pylmps(mpiobject):
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         self.report_energies()
         return
+
+    MIN = MIN_cg
         
     def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0,maxstep=20):
         assert method in ["cg", "sd"]
@@ -550,10 +568,12 @@ class pylmps(mpiobject):
         self.pprint ("SD minimizer done")
         return
 
+    LATMIN = LATMIN_sd
 
-    def MD_init(self, stage, T = None, p=None, startup = False,ensemble='nve', thermo=None, 
+    def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', 
-            colvar = None, mttk_volconstraint='yes', log = True):
+            colvar = None, mttk_volconstraint='yes', log = True, 
+            append=False, dump=True):
         assert bcond in ['iso', 'aniso', 'tri']
         def conversion(r):
             return r * 1000/timestep 
@@ -571,15 +591,28 @@ class pylmps(mpiobject):
         self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe\
                 ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma\
                 pxx pyy pzz pxy pxz pyz')
-        # this is the dump command, up to now plain ascii
-        self.md_dumps = [stage]
-        # TBI do this more clever
+        # NOTE this is a hack .. need to make cells orhto for bcond=1&2 automatically. add triclinic cells to pdlp
         self.lmps.command("change_box all ortho")
-        self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage, tnstep, stage))
-        self.lmps.command('dump_modify %s element %s' % (stage, string.join(self.ff2lmp.plmps_elems)))
-        self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
-        if not traj is None:
-            self.lmps.command("dump %s all pdlp %i %s.pdlp stage %s xyz" % (stage+"_pdlp", tnstep, self.name, stage))
+        if dump is True:
+            self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
+            self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(self.ff2lmp.plmps_elems)))
+            self.md_dumps.append(stage+"_dump")
+        # self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
+        if traj is not None:
+            # ok, we will slo write to the pdlp file
+            if append:
+                raise IOError, "TBI"
+            else:
+                # stage is new and we need to define it and set it up
+                self.pdlp.add_stage(stage)
+                self.pdlp.prepare_stage(stage, traj, tnstep, tstep=timestep/1000.0)
+                # now close the hdf5 file becasue it will be written within lammps
+                self.pdlp.close()
+                # now create the dump
+                traj_string = string.join(traj)
+                print("dump %s all pdlp %i %s.pdlp stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.lmps.command("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.md_dumps.append(stage+"_pdlp")
         # do velocity startup
         if startup is True:
             self.lmps.command('velocity all create %12.6f 42 rot yes dist gaussian' % (T))
