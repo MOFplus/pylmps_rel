@@ -232,13 +232,13 @@ class ff2lammps(base):
         if self._settings["use_improper_umbrella_harmonic"] == True:
             header += "%10d impropers\n"  % (self.nric['oop']*3) # need all three permutations
         else:
-            header += "%10d impropers\n"  % self.nric['oop']            
+            if self.nric['oop'] != 0: header += "%10d impropers\n"  % self.nric['oop']            
         # types are different paramtere types 
         header += "%10d atom types\n"       % len(self.plmps_atypes)
         header += "%10d bond types\n"       % len(self.par_types["bnd"]) 
         header += "%10d angle types\n"      % len(self.par_types["ang"])
         header += "%10d dihedral types\n"   % len(self.par_types["dih"])
-        header += "%10d improper types\n\n" % len(self.par_types["oop"])
+        if len(self.par_types["oop"]) != 0: header += "%10d improper types\n\n" % len(self.par_types["oop"])
         self.adjust_cell()
         xyz = self._mol.get_xyz()
         if self._mol.bcond == 0:
@@ -315,7 +315,7 @@ class ff2lammps(base):
             if diht in self.par_types['dih'].keys():
                 f.write("%10d %5d %8d %8d %8d %8d # %s\n" % (i+1, self.par_types["dih"][diht], a+1, b+1, c+1, d+1, diht))
         # write impropers/oops
-        f.write("\nImpropers\n\n")
+        if len(self.rics["oop"]) != 0: f.write("\nImpropers\n\n")
         for i in range(len(self.rics["oop"])):            
             oopt = tuple(self.parind["oop"][i])
             if oopt:
