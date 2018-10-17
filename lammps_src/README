@@ -36,4 +36,16 @@ Follow these steps to add the h5md extension:
 - switch extension on with "make yes-USER-H5MD"
 - recompile with "make mode=shlib mpi"
 
+Notes (what works, what is missing)
+currently you can:
+- write data to file during MD (xyz, vel, force, cell)
+
+what is missing:
+- must be orthorombic (will change system to ortho to use that)
+ -> to do: 1) fix code to change bcond (not everything is allowed, detect properly and make it ortho)
+           2) make code working for triclinic (this concenrns only unwrapped writing)
+- write force field data to the pdlp file (in pdlpio2)
+- allow restarts (structure restart and later also velocity for MD)
+- allow writing into an exisiting stage (append mode)
+- write molecule info to file 
 
