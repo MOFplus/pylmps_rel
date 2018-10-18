@@ -71,6 +71,25 @@ export PYTHONPATH=/home/$USER/sandbox/lammps/python:$PYTHONPATH
 
 There will soon be a testing framework framework available.
 
+## Building the Documentation
+Mandatory dependencies to built the documentationare
+```
+pip install Sphinx
+pip install sphinx-rtd-theme
+```
+
+As soon as there is a documentation it can be compiled by running
+```
+make html
+```
+in the doc folder.
+A Built directory containing
+```
+/built/html/index.html 
+```
+was created. It can be opened with the browser of your choice
+
+
 
 ## Contributing
 
