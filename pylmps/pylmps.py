@@ -81,7 +81,22 @@ class pylmps(mpiobject):
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
-            logfile = 'none', bcond=2, kspace = False, uff="UFF4MOF"):
+            logfile = 'none', bcond=3, kspace = False, uff="UFF4MOF"):
+        """ the setup creates the data structure necessary to run LAMMPS
+        
+        
+            mfpx (molsys.mol, optional): Defaults to None. mol instance containing the atomistic system
+            local (bool, optional): Defaults to True. If true: run in current folder, if not: create run folder
+            mol (molsys.mol, optional): Defaults to None. mol instance containing the atomistic system
+            par (str, optional): Defaults to None. filename of the .par file containing the term infos
+            ff (str, optional): Defaults to "MOF-FF". Name of the used Forcefield when assigning from the web MOF+
+            pdlp (str, optional): defaults to None. Filename of the pdlp file 
+            restart (str, optional): stage name of the pdlp fiel to restart from
+            logfile (str, optional): Defaults to 'none'. logfile
+            bcond (int, optional): Defaults to 2. Boundary Condition
+            kspace (bool, optional): Defaults to False. if True: use SPME, else use shift damping for coulomb
+            uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
+        """
         self.control["kspace"] = kspace
 #        cmdargs = ['-log', logfile]
 #        if screen == False: cmdargs+=['-screen', 'none']
@@ -129,6 +144,7 @@ class pylmps(mpiobject):
                     self.mol.ff.read(par)
                 else:
                     self.mol.ff.assign_params(ff)
+            self.mol.bcond = bcond
             # now generate the converter
             self.ff2lmp = ff2lammps.ff2lammps(self.mol)
             # adjust the settings
@@ -610,8 +626,34 @@ class pylmps(mpiobject):
 
     def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', 
-            colvar = None, mttk_volconstraint='yes', log = True, 
-            append=False, dump=True):
+            colvar = None, mttk_volconstraint='yes', log = True):
+        """Defines the MD settings
+        
+        MD_init has to be called before a MD simulation can be performed, the ensemble along with the
+        necesary information (Temperature, Pressure, ...), but also trajectory writing frequencies are defined here
+        
+        Args:
+            stage (str): name of the stage
+            T (float, optional): Defaults to None. Temperature of the simulation, if List of len 2 LAMMPS will perform
+            a linear ramp of the Temperature
+            p (float or list of floats, optional): Defaults to None. Pressure of the simulation, if List of len 2 Lammps will perform
+            a linear ramp of the Temperature
+            startup (bool, optional): Defaults to False. if True, sample initial velocities from maxwell boltzmann distribution
+            ensemble (str, optional): Defaults to 'nve'. ensemble of the simulation, can be one of 'nve', 'nvt' or 'npt'
+            thermo (str, optional): Defaults to None. Thermostat to be utilized, can be 'ber' or 'hoover'
+            relax (tuple, optional): Defaults to (0.1,1.). relaxation times for the Thermostat and Barostat
+            traj (list of strings, optional): Defaults to None. defines what is written to the output
+            rnstep (int, optional): Defaults to 100. restart writing frequency
+            tnstep (int, optional): Defaults to 100. trajectory writing frequency
+            timestep (float, optional): Defaults to 1.0. timestep in fs
+            bcond (str, optional): Defaults to 'iso'. boundary condition (check what you set in the setup!) not sure if that does anythign here
+            colvar (string, optional): Defaults to None. if given, the Name of the colvar input file. LAMMPS has to be compiled with colvars in order to use it
+            mttk_volconstraint (str, optional): Defaults to 'yes'. if 'mttk' is used as barostat, define here whether to constraint the volume
+            log (bool, optional): Defaults to True. defines if log file is written
+        
+        Returns:
+            None: None
+        """
         assert bcond in ['iso', 'aniso', 'tri']
         def conversion(r):
             return r * 1000/timestep 
@@ -629,14 +671,25 @@ class pylmps(mpiobject):
         self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe\
                 ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma\
                 pxx pyy pzz pxy pxz pyz')
-        # NOTE this is a hack .. need to make cells orhto for bcond=1&2 automatically. add triclinic cells to pdlp
-        self.lmps.command("change_box all ortho")
+        # check if pressure or temperature ramp is requrested. in this case len(T/P) == 2
+        if hasattr(T,'__iter__'):
+            T1,T2=T[0],T[1]
+        else:
+            T1,T2 = T,T
+        if hasattr(p,'__iter__'):
+            p1,p2=p[0],p[1]
+        else:
+            p1,p2 = p,p
+        # generate regular dump (ASCII)
         if dump is True:
             self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
             self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(self.ff2lmp.plmps_elems)))
             self.md_dumps.append(stage+"_dump")
         # self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
         if traj is not None:
+            # NOTE this is a hack .. need to make cells orhto for bcond=1&2 automatically. add triclinic cells to pdlp
+            assert self.mol.bcond < 3
+            self.lmps.command("change_box all ortho")
             # ok, we will also write to the pdlp file
             if append:
                 raise IOError, "TBI"
@@ -652,41 +705,36 @@ class pylmps(mpiobject):
                 self.lmps.command("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
                 self.md_dumps.append(stage+"_pdlp")
         # do velocity startup
-        if startup is True:
-            self.lmps.command('velocity all create %12.6f 42 rot yes dist gaussian' % (T))
+        if startup:
+            self.lmps.command('velocity all create %12.6f 42 rot yes dist gaussian' % (T1))
         # apply fix
         if ensemble == 'nve':
             self.md_fixes = [stage]
             self.lmps.command('fix %s all nve' % (stage))
         elif ensemble == 'nvt':
             if thermo == 'ber':
-                self.lmps.command('fix %s all temp/berendsen %12.6f %12.6f %i'% (stage,T,T,conversion(relax[0])))
+                self.lmps.command('fix %s all temp/berendsen %12.6f %12.6f %i'% (stage,T1,T2,conversion(relax[0])))
                 self.lmps.command('fix %s_nve all nve' % stage)
                 self.md_fixes = [stage, '%s_nve' % stage]
             elif thermo == 'hoover':
-                self.lmps.command('fix %s all nvt temp %12.6f %12.6f %i' % (stage,T,T,conversion(relax[0])))
+                self.lmps.command('fix %s all nvt temp %12.6f %12.6f %i' % (stage,T1,T2,conversion(relax[0])))
                 self.md_fixes = [stage]
             else: 
                 raise NotImplementedError
         elif ensemble == "npt":
             if thermo == 'hoover':
                 self.lmps.command('fix %s all npt temp %12.6f %12.6f %i %s %12.6f %12.6f %i' 
-                        % (stage,T,T,conversion(relax[0]),bcond, p, p, conversion(relax[1])))
+                        % (stage,T1,T2,conversion(relax[0]),bcond, p1, p2, conversion(relax[1])))
                 self.md_fixes = [stage]
             elif thermo == 'ber':
                 assert bcond != "tri"
-                self.lmps.command('fix %s_temp all temp/berendsen %12.6f %12.6f %i'% (stage,T,T,conversion(relax[0])))
-                self.lmps.command('fix %s_press all press/berendsen %s %12.6f %12.6f %i'% (stage,bcond,p,p,conversion(relax[1])))
+                self.lmps.command('fix %s_temp all temp/berendsen %12.6f %12.6f %i'% (stage,T1,T2,conversion(relax[0])))
+                self.lmps.command('fix %s_press all press/berendsen %s %12.6f %12.6f %i'% (stage,bcond,p1,p2,conversion(relax[1])))
                 self.lmps.command('fix %s_nve all nve' % stage)
                 self.md_fixes = ['%s_temp' % stage,'%s_press' % stage , '%s_nve' % stage]
             elif thermo == 'mttk':
-                if hasattr(p,'__iter__'):
-                    self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f tri %12.6f %12.6f %12.6f volconstraint %s'
-                                  % (stage,T,T,conversion(relax[0]),p[0],p[1],conversion(relax[1]),mttk_volconstraint))
-                else:
-                    self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f tri %12.6f %12.6f %12.6f volconstraint %s'
-                                  % (stage,T,T,conversion(relax[0]),p,p,conversion(relax[1]),mttk_volconstraint))
-
+                self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f tri %12.6f %12.6f %12.6f volconstraint %s'
+                               % (stage,T1,T2,conversion(relax[0]),p1,p2,conversion(relax[1]),mttk_volconstraint))
                 self.lmps.command('fix_modify %s_mttknhc energy yes'% (stage,))
                 self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma pxx pyy pzz pxy pxz pyz')
                 self.md_fixes = ['%s_mttknhc'% (stage,)]
