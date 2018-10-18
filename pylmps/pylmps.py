@@ -30,6 +30,8 @@ wcomm = MPI.COMM_WORLD
 #    else:
 #        return
 
+from molsys.util import pdlpio2
+
 try:
     from lammps import lammps
 except ImportError:
@@ -66,10 +68,20 @@ class pylmps(mpiobject):
         self.control["oop_umbrella"] = False
         self.control["kspace_gewald"] = 0.0
         self.control["cutoff"] = 12.0
+        # defaults
+        self.pdlp = None
+        self.md_dumps = []
+        # datafuncs
+        self.data_funcs = {\
+            "xyz"   : self.get_xyz,\
+            "vel"   : self.get_vel,\
+            "force" : self.get_force,\
+            "cell"  : self.get_cell,\
+        }
         return
 
-    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", 
-            logfile = 'none', bcond=3, kspace = False):
+    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
+            logfile = 'none', bcond=3, kspace = False, uff="UFF4MOF"):
         """ the setup creates the data structure necessary to run LAMMPS
         
         
@@ -77,10 +89,13 @@ class pylmps(mpiobject):
             local (bool, optional): Defaults to True. If true: run in current folder, if not: create run folder
             mol (molsys.mol, optional): Defaults to None. mol instance containing the atomistic system
             par (str, optional): Defaults to None. filename of the .par file containing the term infos
-            ff (str, optional): Defaults to "MOF-FF". Name of the used Forcefield
+            ff (str, optional): Defaults to "MOF-FF". Name of the used Forcefield when assigning from the web MOF+
+            pdlp (str, optional): defaults to None. Filename of the pdlp file 
+            restart (str, optional): stage name of the pdlp fiel to restart from
             logfile (str, optional): Defaults to 'none'. logfile
             bcond (int, optional): Defaults to 2. Boundary Condition
             kspace (bool, optional): Defaults to False. if True: use SPME, else use shift damping for coulomb
+            uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
         """
         self.control["kspace"] = kspace
 #        cmdargs = ['-log', logfile]
@@ -92,37 +107,54 @@ class pylmps(mpiobject):
         # if par is given or ff="file" we use mfpx/ric/par
         # if mol is given then this is expected to be an already assigned mol object
         #      (in the latter case everything else is ignored!)
-        self.start_dir = os.getcwd()
+        self.start_dir = os.getcwd()+"/"
+        # if ff is set to "UFF" assignement is done via a modified lammps_interface from peter boyds
+        use_uff = False
+        if ff == "UFF":
+            self.pprint("USING UFF SETUP!! EXPERIMENTAL!!")
+            use_uff = True
+        # set the pdlp filename
+        if pdlp is None:
+            self.pdlpname = self.start_dir + self.name + ".pdlp"
+        else:
+            self.pdlpname = self.start_dir + pdlp
+        # get the mol instance either directly or from file or as an argument
         if mol != None:
             self.mol = mol
         else:
-            # we need to make a molsys and read it in
-            self.mol = molsys.mol()
-            if mfpx == None:
-                mfpx = self.name + ".mfpx"
-            self.mol.read(mfpx)
-            self.mol.addon("ff")
-            if par or ff=="file":
-                if par == None:
-                    par = self.name
-                self.mol.ff.read(par)
+            if restart is not None:
+                # The mol object should be read from the pdlp file
+                self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self, restart=restart)
+                self.mol  = self.pdlp.get_mol_from_system()
             else:
-                self.mol.ff.assign_params(ff)
-        self.mol.bcond = bcond
-        # now generate the converter
-        self.ff2lmp = ff2lammps.ff2lammps(self.mol)
-        # adjust the settings
-        if self.control["oop_umbrella"]:
-            self.pprint("using umbrella_harmonic for OOP terms")
-            self.ff2lmp.setting("use_improper_umbrella_harmonic", True)
-        if self.control["kspace_gewald"] != 0.0:
-            self.ff2lmp.setting("kspace_gewald", self.control["kspace_gewald"])
-        self.ff2lmp.setting("cutoff", self.control["cutoff"])
+                # we need to make a molsys and read it in
+                self.mol = molsys.mol()
+                if mfpx == None:
+                    mfpx = self.name + ".mfpx"
+                self.mol.read(mfpx)
+        # get the forcefield if this is not done already (if addon is there assume params are exisiting .. TBI a flag in ff addon to indicate that params are set up)
         self.data_file = self.name+".data"
         self.inp_file  = self.name+".in"
+        if not use_uff:
+            if not "ff" in self.mol.loaded_addons:
+                self.mol.addon("ff")
+                if par or ff=="file":
+                    if par == None:
+                        par = self.name
+                    self.mol.ff.read(par)
+                else:
+                    self.mol.ff.assign_params(ff)
+            self.mol.bcond = bcond
+            # now generate the converter
+            self.ff2lmp = ff2lammps.ff2lammps(self.mol)
+            # adjust the settings
+            if self.control["oop_umbrella"]:
+                self.pprint("using umbrella_harmonic for OOP terms")
+                self.ff2lmp.setting("use_improper_umbrella_harmonic", True)
+            if self.control["kspace_gewald"] != 0.0:
+                self.ff2lmp.setting("kspace_gewald", self.control["kspace_gewald"])
+            self.ff2lmp.setting("cutoff", self.control["cutoff"])
         if local:
-#            self.data_file = self.name+".data"
-#            self.inp_file  = self.name+".in"
             self.rundir=self.start_dir
         else:
             self.rundir = self.start_dir+'/'+self.name
@@ -143,10 +175,14 @@ class pylmps(mpiobject):
         #further settings in order to be compatible to pydlpoly
         self.QMMM = False
         self.bcond = bcond
-        # before writing output we can adjust the settings in ff2lmp
-        # TBI
-        self.ff2lmp.write_data(filename=self.data_file)
-        self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"])
+        if use_uff:
+            self.setup_uff(uff)
+        else:
+            # before writing output we can adjust the settings in ff2lmp
+            # TBI
+            self.ff2lmp.write_data(filename=self.data_file)
+            self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"])
+        # now in and data exist and we can start up    
         self.lmps.file(self.inp_file)
         os.chdir(self.start_dir)
         # connect variables for extracting
@@ -162,7 +198,40 @@ class pylmps(mpiobject):
         self.calc_energy()
         self.report_energies()
         self.md_fixes = []
+        # Now connect pdlpio (using pdlpio2)
+        if self.pdlp is None:
+            self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self)
         return
+
+    def setup_uff(self, uff):
+        """not to be called ... subfunction of setup to generate input for UFF calculation
+        uff is the type of forcefield to be used
+
+        NOTE: uses code taken from lammps_main.py
+        usage of options has been heavily modified .. no "command line" options
+        note that pair style is a dirty hack
+
+        also note: name of in and data files are hardcoded in the modified lammps_interface code
+        """
+        from lammps_interface.InputHandler import Options
+        from lammps_interface.structure_data import from_molsys
+        from lammps_interface.lammps_main import LammpsSimulation
+        assert uff in ["UFF", "UFF4MOF"]
+        options = Options()
+        options.force_field = uff
+        options.pair_style  = "lj/cut 12.5"
+        sim = LammpsSimulation(self.name, options)
+        cell, graph = from_molsys(self.mol)
+        sim.set_cell(cell)
+        sim.set_graph(graph)
+        sim.split_graph()
+        sim.assign_force_fields()
+        sim.compute_simulation_size()
+        sim.merge_graphs()
+        sim.write_lammps_files()
+        return
+
+
 
     def setup_data(self,name,datafile,inputfile,mfpx=None,mol=None,local=True,logfile='none',bcond=2,kspace = True):
         ''' setup method for use with a lammps data file that contains the system information
@@ -276,7 +345,15 @@ class pylmps(mpiobject):
         xyz = np.ctypeslib.as_array(self.lmps.gather_atoms("x",1,3))
         xyz.shape=(self.natoms,3)
         return xyz
-        
+
+    def get_vel(self):
+        """
+        get the velocity as a numpy array
+        """
+        vel = np.ctypeslib.as_array(self.lmps.gather_atoms("v",1,3))
+        vel.shape=(self.natoms,3)
+        return vel
+
     def get_cell_volume(self):
         """ 
         get the cell volume from lammps variable vol
@@ -445,6 +522,8 @@ class pylmps(mpiobject):
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         self.report_energies()
         return
+
+    MIN = MIN_cg
         
     def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0,maxstep=20):
         assert method in ["cg", "sd"]
@@ -519,7 +598,7 @@ class pylmps(mpiobject):
                 step *= maxstep/steplength
             new_cell = cell + step
             # cell has to be properly rotated for lammps
-            new_cell = self.ff2lmp.rotate_cell(new_cell)
+            new_cell = self.rotate_cell(new_cell)
             self.pprint ("New cell:\n%s" % np.array2string(new_cell,precision=4,suppress_small=True))
             self.set_cell(new_cell)
             self.MIN_cg(thresh, maxiter=maxiter)
@@ -543,8 +622,9 @@ class pylmps(mpiobject):
         self.pprint ("SD minimizer done")
         return
 
+    LATMIN = LATMIN_sd
 
-    def MD_init(self, stage, T = None, p=None, startup = False,ensemble='nve', thermo=None, 
+    def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', 
             colvar = None, mttk_volconstraint='yes', log = True):
         """Defines the MD settings
@@ -600,11 +680,30 @@ class pylmps(mpiobject):
             p1,p2=p[0],p[1]
         else:
             p1,p2 = p,p
-        # this is the dump command, up to now plain ascii
-        self.md_dumps = [stage]
-        self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage, tnstep, stage))
-        self.lmps.command('dump_modify %s element %s' % (stage, string.join(self.ff2lmp.plmps_elems)))
-#        self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage,tnstep,stage))
+        # generate regular dump (ASCII)
+        if dump is True:
+            self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
+            self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(self.ff2lmp.plmps_elems)))
+            self.md_dumps.append(stage+"_dump")
+        # self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
+        if traj is not None:
+            # NOTE this is a hack .. need to make cells orhto for bcond=1&2 automatically. add triclinic cells to pdlp
+            assert self.mol.bcond < 3
+            self.lmps.command("change_box all ortho")
+            # ok, we will also write to the pdlp file
+            if append:
+                raise IOError, "TBI"
+            else:
+                # stage is new and we need to define it and set it up
+                self.pdlp.add_stage(stage)
+                self.pdlp.prepare_stage(stage, traj, tnstep, tstep=timestep/1000.0)
+                # now close the hdf5 file becasue it will be written within lammps
+                self.pdlp.close()
+                # now create the dump
+                traj_string = string.join(traj)
+                print("dump %s all pdlp %i %s.pdlp stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.lmps.command("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.md_dumps.append(stage+"_pdlp")
         # do velocity startup
         if startup:
             self.lmps.command('velocity all create %12.6f 42 rot yes dist gaussian' % (T1))
@@ -660,7 +759,31 @@ class pylmps(mpiobject):
         self.lmps.command('reset_timestep 0')
         return
 
+    @staticmethod
+    def rotate_cell(cell):
+        if np.linalg.norm(cell[0]) != cell[0,0]:
+            # system needs to be rotated
+            A = cell[0]
+            B = cell[1]
+            C = cell[2]
+            AcB = np.cross(A,B)
+            uAcB = AcB/np.linalg.norm(AcB)
+            lA = np.linalg.norm(A)
+            uA = A/lA
+            lx = lA
+            xy = np.dot(B,uA)
+            ly = np.linalg.norm(np.cross(uA,B))
+            xz = np.dot(C,uA)
+            yz = np.dot(C,np.cross(uAcB,uA))
+            lz = np.dot(C,uAcB)
+            cell = np.array([
+                    [lx,0,0],
+                    [xy,ly,0.0],
+                    [xz,yz,lz]])
+        return cell
+ 
 
+ 
 
 
 
