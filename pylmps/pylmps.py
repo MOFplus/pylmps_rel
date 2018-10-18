@@ -626,7 +626,7 @@ class pylmps(mpiobject):
 
     def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', 
-            colvar = None, mttk_volconstraint='yes', log = True):
+            colvar = None, mttk_volconstraint='yes', log = True,dump=True):
         """Defines the MD settings
         
         MD_init has to be called before a MD simulation can be performed, the ensemble along with the
