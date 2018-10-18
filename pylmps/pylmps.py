@@ -598,7 +598,7 @@ class pylmps(mpiobject):
                 step *= maxstep/steplength
             new_cell = cell + step
             # cell has to be properly rotated for lammps
-            new_cell = self.rotate_cell(new_cell)
+            new_cell = rotate_cell(new_cell)
             self.pprint ("New cell:\n%s" % np.array2string(new_cell,precision=4,suppress_small=True))
             self.set_cell(new_cell)
             self.MIN_cg(thresh, maxiter=maxiter)
@@ -683,7 +683,7 @@ class pylmps(mpiobject):
         # generate regular dump (ASCII)
         if dump is True:
             self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
-            self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(self.ff2lmp.plmps_elems)))
+            self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join([i.capitalize() for i in self.mol.elems])))
             self.md_dumps.append(stage+"_dump")
         # self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
         if traj is not None:
@@ -759,28 +759,28 @@ class pylmps(mpiobject):
         self.lmps.command('reset_timestep 0')
         return
 
-    @staticmethod
-    def rotate_cell(cell):
-        if np.linalg.norm(cell[0]) != cell[0,0]:
-            # system needs to be rotated
-            A = cell[0]
-            B = cell[1]
-            C = cell[2]
-            AcB = np.cross(A,B)
-            uAcB = AcB/np.linalg.norm(AcB)
-            lA = np.linalg.norm(A)
-            uA = A/lA
-            lx = lA
-            xy = np.dot(B,uA)
-            ly = np.linalg.norm(np.cross(uA,B))
-            xz = np.dot(C,uA)
-            yz = np.dot(C,np.cross(uAcB,uA))
-            lz = np.dot(C,uAcB)
-            cell = np.array([
-                    [lx,0,0],
-                    [xy,ly,0.0],
-                    [xz,yz,lz]])
-        return cell
+# helper function
+def rotate_cell(cell):
+    if np.linalg.norm(cell[0]) != cell[0,0]:
+        # system needs to be rotated
+        A = cell[0]
+        B = cell[1]
+        C = cell[2]
+        AcB = np.cross(A,B)
+        uAcB = AcB/np.linalg.norm(AcB)
+        lA = np.linalg.norm(A)
+        uA = A/lA
+        lx = lA
+        xy = np.dot(B,uA)
+        ly = np.linalg.norm(np.cross(uA,B))
+        xz = np.dot(C,uA)
+        yz = np.dot(C,np.cross(uAcB,uA))
+        lz = np.dot(C,uAcB)
+        cell = np.array([
+                [lx,0,0],
+                [xy,ly,0.0],
+                [xz,yz,lz]])
+    return cell
  
 
  
