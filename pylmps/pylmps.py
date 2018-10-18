@@ -20,6 +20,7 @@ from mpi4py import MPI
 
 import molsys
 import ff2lammps
+from util import rotate_cell
 from molsys import mpiobject
 wcomm = MPI.COMM_WORLD
 # overload print function in parallel case
@@ -407,7 +408,7 @@ class pylmps(mpiobject):
 
     def set_cell(self, cell, cell_only=False):
         # we have to check here if the box is correctly rotated in the triclinic case
-        cell = ff2lammps.ff2lammps.rotate_cell(cell)
+        cell = rotate_cell(cell)
         if abs(cell[0,1]) > 10e-14: raise IOError("Cell is not properly rotated")
         if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
         if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
@@ -598,7 +599,7 @@ class pylmps(mpiobject):
                 step *= maxstep/steplength
             new_cell = cell + step
             # cell has to be properly rotated for lammps
-            new_cell = self.rotate_cell(new_cell)
+            new_cell = rotate_cell(new_cell)
             self.pprint ("New cell:\n%s" % np.array2string(new_cell,precision=4,suppress_small=True))
             self.set_cell(new_cell)
             self.MIN_cg(thresh, maxiter=maxiter)
@@ -626,7 +627,7 @@ class pylmps(mpiobject):
 
     def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', 
-            colvar = None, mttk_volconstraint='yes', log = True,dump=True):
+            colvar = None, mttk_volconstraint='yes', log = True, dump=True):
         """Defines the MD settings
         
         MD_init has to be called before a MD simulation can be performed, the ensemble along with the
@@ -642,7 +643,7 @@ class pylmps(mpiobject):
             ensemble (str, optional): Defaults to 'nve'. ensemble of the simulation, can be one of 'nve', 'nvt' or 'npt'
             thermo (str, optional): Defaults to None. Thermostat to be utilized, can be 'ber' or 'hoover'
             relax (tuple, optional): Defaults to (0.1,1.). relaxation times for the Thermostat and Barostat
-            traj (list of strings, optional): Defaults to None. defines what is written to the output
+            traj (list of strings, optional): Defaults to None. defines what is written to the pdlp file
             rnstep (int, optional): Defaults to 100. restart writing frequency
             tnstep (int, optional): Defaults to 100. trajectory writing frequency
             timestep (float, optional): Defaults to 1.0. timestep in fs
@@ -650,6 +651,7 @@ class pylmps(mpiobject):
             colvar (string, optional): Defaults to None. if given, the Name of the colvar input file. LAMMPS has to be compiled with colvars in order to use it
             mttk_volconstraint (str, optional): Defaults to 'yes'. if 'mttk' is used as barostat, define here whether to constraint the volume
             log (bool, optional): Defaults to True. defines if log file is written
+            dump (bool, optional): Defaults to True: defines if an ASCII dump is written
         
         Returns:
             None: None
@@ -683,7 +685,7 @@ class pylmps(mpiobject):
         # generate regular dump (ASCII)
         if dump is True:
             self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
-            self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(self.ff2lmp.plmps_elems)))
+            self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join([i.capitalize() for i in self.mol.elems])))
             self.md_dumps.append(stage+"_dump")
         # self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
         if traj is not None:
@@ -758,30 +760,6 @@ class pylmps(mpiobject):
         self.md_dumps = []
         self.lmps.command('reset_timestep 0')
         return
-
-    @staticmethod
-    def rotate_cell(cell):
-        if np.linalg.norm(cell[0]) != cell[0,0]:
-            # system needs to be rotated
-            A = cell[0]
-            B = cell[1]
-            C = cell[2]
-            AcB = np.cross(A,B)
-            uAcB = AcB/np.linalg.norm(AcB)
-            lA = np.linalg.norm(A)
-            uA = A/lA
-            lx = lA
-            xy = np.dot(B,uA)
-            ly = np.linalg.norm(np.cross(uA,B))
-            xz = np.dot(C,uA)
-            yz = np.dot(C,np.cross(uAcB,uA))
-            lz = np.dot(C,uAcB)
-            cell = np.array([
-                    [lx,0,0],
-                    [xy,ly,0.0],
-                    [xz,yz,lz]])
-        return cell
- 
 
  
 

@@ -28,6 +28,9 @@ mdyn2kcal = 143.88
 angleunit = 0.02191418
 rad2deg = 180.0/np.pi 
 
+from util import rotate_cell
+
+
 class ff2lammps(base):
     
     def __init__(self, mol,setup_FF=True):
@@ -129,31 +132,7 @@ class ff2lammps(base):
         self._settings["kspace_method"] = "ewald"
         self._settings["kspace_prec"] = 1.0e-6
         self._settings["use_improper_umbrella_harmonic"] = False # default is to use improper_inversion_harmonic
-        return
-
-    @staticmethod
-    def rotate_cell(cell):
-        if np.linalg.norm(cell[0]) != cell[0,0]:
-            # system needs to be rotated
-            A = cell[0]
-            B = cell[1]
-            C = cell[2]
-            AcB = np.cross(A,B)
-            uAcB = AcB/np.linalg.norm(AcB)
-            lA = np.linalg.norm(A)
-            uA = A/lA
-            lx = lA
-            xy = np.dot(B,uA)
-            ly = np.linalg.norm(np.cross(uA,B))
-            xz = np.dot(C,uA)
-            yz = np.dot(C,np.cross(uAcB,uA))
-            lz = np.dot(C,uAcB)
-            cell = np.array([
-                    [lx,0,0],
-                    [xy,ly,0.0],
-                    [xz,yz,lz]])
-        return cell
- 
+        return 
 
     def adjust_cell(self):
         if self._mol.bcond > 0:
@@ -162,7 +141,7 @@ class ff2lammps(base):
             self.tilt = 'small'
             # now check if cell is oriented along the (1,0,0) unit vector
             if np.linalg.norm(cell[0]) != cell[0,0]:
-                rcell = self.rotate_cell(cell)
+                rcell = rotate_cell(cell)
                 self._mol.set_cell(rcell, cell_only=False)
             else:
                 rcell = cell
