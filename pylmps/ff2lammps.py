@@ -28,7 +28,7 @@ mdyn2kcal = 143.88
 angleunit = 0.02191418
 rad2deg = 180.0/np.pi 
 
-from pylmps import rotate_cell
+from util import rotate_cell
 
 
 class ff2lammps(base):
