@@ -685,6 +685,7 @@ class pylmps(mpiobject):
         # generate regular dump (ASCII)
         if dump is True:
             self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
+            #self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(self.ff2lmp.plmps_elems)))
             self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join([i.capitalize() for i in self.mol.elems])))
             self.md_dumps.append(stage+"_dump")
         # self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
