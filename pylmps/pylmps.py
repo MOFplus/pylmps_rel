@@ -110,10 +110,10 @@ class pylmps(mpiobject):
         #      (in the latter case everything else is ignored!)
         self.start_dir = os.getcwd()+"/"
         # if ff is set to "UFF" assignement is done via a modified lammps_interface from peter boyds
-        use_uff = False
+        self.use_uff = False
         if ff == "UFF":
             self.pprint("USING UFF SETUP!! EXPERIMENTAL!!")
-            use_uff = True
+            self.use_uff = True
         # set the pdlp filename
         if pdlp is None:
             self.pdlpname = self.start_dir + self.name + ".pdlp"
@@ -136,7 +136,7 @@ class pylmps(mpiobject):
         # get the forcefield if this is not done already (if addon is there assume params are exisiting .. TBI a flag in ff addon to indicate that params are set up)
         self.data_file = self.name+".data"
         self.inp_file  = self.name+".in"
-        if not use_uff:
+        if not self.use_uff:
             if not "ff" in self.mol.loaded_addons:
                 self.mol.addon("ff")
                 if par or ff=="file":
@@ -176,7 +176,7 @@ class pylmps(mpiobject):
         #further settings in order to be compatible to pydlpoly
         self.QMMM = False
         self.bcond = bcond
-        if use_uff:
+        if self.use_uff:
             self.setup_uff(uff)
         else:
             # before writing output we can adjust the settings in ff2lmp
@@ -230,6 +230,9 @@ class pylmps(mpiobject):
         sim.compute_simulation_size()
         sim.merge_graphs()
         sim.write_lammps_files()
+        # in the uff mode we need access to the unique atom types in terms of their elements
+        self.uff_plmps_elems = [sim.unique_atom_types[i][1]["element"] for i in sim.unique_atom_types.keys()]
+    
         return
 
 
@@ -627,7 +630,7 @@ class pylmps(mpiobject):
 
     def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', 
-            colvar = None, mttk_volconstraint='yes', log = True, dump=True):
+            colvar = None, mttk_volconstraint='yes', log = True, dump=True, append=False):
         """Defines the MD settings
         
         MD_init has to be called before a MD simulation can be performed, the ensemble along with the
@@ -652,6 +655,7 @@ class pylmps(mpiobject):
             mttk_volconstraint (str, optional): Defaults to 'yes'. if 'mttk' is used as barostat, define here whether to constraint the volume
             log (bool, optional): Defaults to True. defines if log file is written
             dump (bool, optional): Defaults to True: defines if an ASCII dump is written
+            append (bool, optional): Defaults to False: if True data is appended to the exisiting stage (TBI)
         
         Returns:
             None: None
@@ -685,8 +689,11 @@ class pylmps(mpiobject):
         # generate regular dump (ASCII)
         if dump is True:
             self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
-            self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(self.ff2lmp.plmps_elems)))
-            #self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join([i.capitalize() for i in self.mol.elems])))
+            if self.use_uff:
+                plmps_elems = self.uff_plmps_elems
+            else:
+                plmps_elems = self.ff2lmp.plmps_elems
+            self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(plmps_elems)))
             self.md_dumps.append(stage+"_dump")
         # self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
         if traj is not None:
