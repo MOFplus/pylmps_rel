@@ -677,7 +677,7 @@ class pylmps(mpiobject):
         label = '%-5s' % (stage.upper()[:5])
         self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe\
                 ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma\
-                pxx pyy pzz pxy pxz pyz')
+                pxx pyy pzz pxy pxz pyz spcpu')
         # check if pressure or temperature ramp is requrested. in this case len(T/P) == 2
         if hasattr(T,'__iter__'):
             T1,T2=T[0],T[1]
