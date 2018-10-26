@@ -23,9 +23,9 @@ pl.setup(local=True, ff="MOF-FF")
 
 pl.MIN(0.1)
 
-pl.LATMIN(0.1, 0.1)
-pl.LATMIN(0.1, 0.1)
-pl.LATMIN(0.05, 0.05)
+pl.LATMIN_boxrel(0.1, 0.1)
+pl.LATMIN_sd(0.1, 0.1)
+pl.LATMIN_sd(0.05, 0.05)
 pl.MIN(0.01)
 
 pl.write(name+'_uff4mof_latopt.mfpx')

@@ -82,7 +82,7 @@ class pylmps(mpiobject):
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
-            logfile = 'none', bcond=3, kspace = False, uff="UFF4MOF"):
+            logfile = 'none', bcond=3, kspace = False, uff="UFF4MOF",omit_pdlp=True):
         """ the setup creates the data structure necessary to run LAMMPS
         
         
@@ -200,6 +200,7 @@ class pylmps(mpiobject):
         self.report_energies()
         self.md_fixes = []
         # Now connect pdlpio (using pdlpio2)
+        if omit_pdlp is True: return
         if self.pdlp is None:
             self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self)
         return
