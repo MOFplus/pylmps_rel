@@ -104,19 +104,21 @@ class ff2lammps(base):
                 #self.plmps_mass[at] = elements.mass[e]
                 self.plmps_mass[at] = elements.mass[self.plmps_elems[-1].lower()]
                 #print("with mass %12.6f" % elements.mass[e])
-        for i, ati in enumerate(self.plmps_atypes):
-            for j, atj in enumerate(self.plmps_atypes[i:],i):
-                vdwi, chai = ati.split("/")
-                vdwj, chaj = atj.split("/")
-                vdwpairdata = self._mol.ff.vdwdata[vdwi+":"+vdwj]
-                sigma_i = self.par["cha"][chai][1][1]
-                sigma_j = self.par["cha"][chaj][1][1]
-                # compute sigma_ij
-                sigma_ij = np.sqrt(sigma_i*sigma_i+sigma_j*sigma_j)
-                # vdwpairdata is (pot, [rad, eps])
-                pair_data = copy.copy(vdwpairdata[1])
-                pair_data.append(1.0/sigma_ij)
-                self.plmps_pair_data[(i+1,j+1)] = pair_data
+#        for i, ati in enumerate(self.plmps_atypes):
+#            for j, atj in enumerate(self.plmps_atypes[i:],i):
+#                vdwi, chai = ati.split("/")
+#                vdwj, chaj = atj.split("/")
+#                vdwpairdata = self._mol.ff.vdwdata[vdwi+":"+vdwj]
+#                sigma_i = self.par["cha"][chai][1][1]
+#                sigma_j = self.par["cha"][chaj][1][1]
+#                # compute sigma_ij
+#                sigma_ij = np.sqrt(sigma_i*sigma_i+sigma_j*sigma_j)
+#                # vdwpairdata is (pot, [rad, eps])
+#                pair_data = []
+#                pair_data.append(vdwpairdata)
+#                #pair_data = copy.copy(vdwpairdata[1])
+#                pair_data.append(1.0/sigma_ij)
+#                self.plmps_pair_data[(i+1,j+1)] = pair_data
         # general settings                
         self._settings = {}
         # set defaults
@@ -273,21 +275,21 @@ class ff2lammps(base):
             f.write("%10d %5d %5d %10.5f %12.6f %12.6f %12.6f # %s\n" % (i+1, molnumb, atype, chrg, x,y,z, vdwt))
         self.pprint("The total charge of the system is: %12.8f" % chargesum)
         # write bonds
-        f.write("\nBonds\n\n")
+        if len(self.rics["bnd"]) != 0: f.write("\nBonds\n\n")
         for i in range(len(self.rics["bnd"])):
             bndt = tuple(self.parind["bnd"][i])
             a,b  = self.rics["bnd"][i]
             if bndt in self.par_types['bnd'].keys():
                 f.write("%10d %5d %8d %8d  # %s\n" % (i+1, self.par_types["bnd"][bndt], a+1, b+1, bndt))
         # write angles
-        f.write("\nAngles\n\n")
+        if len(self.rics["ang"]) != 0: f.write("\nAngles\n\n")
         for i in range(len(self.rics["ang"])):
             angt = tuple(self.parind["ang"][i])
             a,b,c  = self.rics["ang"][i]
             if angt in self.par_types['ang'].keys():
                 f.write("%10d %5d %8d %8d %8d  # %s\n" % (i+1, self.par_types["ang"][angt], a+1, b+1, c+1, angt))
         # write dihedrals
-        f.write("\nDihedrals\n\n")
+        if len(self.rics["dih"]) != 0: f.write("\nDihedrals\n\n")
         for i in range(len(self.rics["dih"])):
             diht = tuple(self.parind["dih"][i])
             a,b,c,d  = self.rics["dih"][i]
@@ -313,7 +315,10 @@ class ff2lammps(base):
         pf = self._settings["parformat"]+" "
         return n*pf
 
-    def write2internal(self,lmps):
+    def write2internal(self,lmps,pair = False):
+        if pair:
+            pstrings = sef.pairterm_formatter()
+            for p in pstrings: lmps.lmps.command(p)
         formatter = {"bnd": self.bondterm_formatter,
                 "ang": self.angleterm_formatter,
                 "dih": self.dihedralterm_formatter,
@@ -327,11 +332,45 @@ class ff2lammps(base):
                     for p in pstrings: lmps.lmps.command(p)
         return
 
-#        for bt in self.par_types["bnd"].keys():
-#            bt_number = self.par_types["bnd"][bt]
-#            for ibt in bt:
-#                pot_type, params = self.par["bnd"][ibt]
-#                if pot_type == "mm3":
+    def pairterm_formatter(self,comment = False):
+        # this method behaves different thant the other formatters because it
+        # performs a loop over all pairs
+        # recompute pairdata by the combination rules
+        self._mol.ff.setup_pair_potentials()
+        pstrings = []
+        #TODO recompute pair data before
+        for i, ati in enumerate(self.plmps_atypes):
+            for j, atj in enumerate(self.plmps_atypes[i:],i):
+                # compute the pair data relevant stuff directly here
+                vdwi, chai = ati.split("/")
+                vdwj, chaj = atj.split("/")
+                vdw = self._mol.ff.vdwdata[vdwi+":"+vdwj]
+                sigma_i = self.par["cha"][chai][1][1]
+                sigma_j = self.par["cha"][chaj][1][1]
+                # compute sigma_ij
+                alpha_ij = 1.0/np.sqrt(sigma_i*sigma_i+sigma_j*sigma_j)
+                if vdw[0] == "buck6d":
+                    r0, eps = vdw[1]
+                    A = self._settings["vdw_a"]*eps
+                    B = self._settings["vdw_b"]/r0
+                    C = eps*self._settings["vdw_c"]*r0**6
+                    D = 6.0*(self._settings["vdw_dampfact"]*r0)**14
+                    #pstrings.append(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s) % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))
+                    #f.write(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s\n") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))
+                elif vdw[0] == "buck":
+                    A,B,C = vdw[1]
+                    D = 0.
+                elif vdw[0] == "buck6de":
+                     A,B,C,D = vdw[1]
+                else:
+                    raise ValueError("unknown pair potential")
+                if comment:
+                     pstrings.append(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))
+                else:
+                     pstrings.append(("pair_coeff %5d %5d " + self.parf(5)) % (i+1,j+1, A, B, C, D, alpha_ij))
+        return pstrings
+
+
 
     def bondterm_formatter(self, number, pot_type, params):
         assert type(params) == list
@@ -469,14 +508,16 @@ class ff2lammps(base):
         else:
             # use shift damping (dsf)
             f.write("\npair_style buck6d/coul/gauss/dsf %10.4f %10.4f\n\n" % (self._settings["vdw_smooth"], self._settings["cutoff"]))
-        for i, ati in enumerate(self.plmps_atypes):
-            for j, atj in enumerate(self.plmps_atypes[i:],i):
-                r0, eps, alpha_ij = self.plmps_pair_data[(i+1,j+1)]
-                A = self._settings["vdw_a"]*eps
-                B = self._settings["vdw_b"]/r0
-                C = eps*self._settings["vdw_c"]*r0**6
-                D = 6.0*(self._settings["vdw_dampfact"]*r0)**14
-                f.write(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s\n") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))            
+        pairstrings = self.pairterm_formatter(comment = True)
+        for s in pairstrings: f.write((s+"\n"))
+#        for i, ati in enumerate(self.plmps_atypes):
+#            for j, atj in enumerate(self.plmps_atypes[i:],i):
+#                r0, eps, alpha_ij = self.plmps_pair_data[(i+1,j+1)]
+#                A = self._settings["vdw_a"]*eps
+#                B = self._settings["vdw_b"]/r0
+#                C = eps*self._settings["vdw_c"]*r0**6
+#                D = 6.0*(self._settings["vdw_dampfact"]*r0)**14
+#                f.write(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s\n") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))            
         # bond style
         f.write("\nbond_style hybrid class2 morse\n\n")
         for bt in self.par_types["bnd"].keys():
