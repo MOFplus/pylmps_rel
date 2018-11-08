@@ -134,6 +134,11 @@ class ff2lammps(base):
         self._settings["kspace_method"] = "ewald"
         self._settings["kspace_prec"] = 1.0e-6
         self._settings["use_improper_umbrella_harmonic"] = False # default is to use improper_inversion_harmonic
+        # add settings from ff addon
+        for k,v in self._mol.ff.settings.items():
+            self._settings[k]=v
+        if self._settings["chargetype"]=="gaussian":
+            assert self._settings["vdwtype"]=="exp6_damped"
         return 
 
     def adjust_cell(self):
@@ -317,7 +322,7 @@ class ff2lammps(base):
 
     def write2internal(self,lmps,pair = False):
         if pair:
-            pstrings = sef.pairterm_formatter()
+            pstrings = self.pairterm_formatter()
             for p in pstrings: lmps.lmps.command(p)
         formatter = {"bnd": self.bondterm_formatter,
                 "ang": self.angleterm_formatter,
@@ -345,29 +350,43 @@ class ff2lammps(base):
                 vdwi, chai = ati.split("/")
                 vdwj, chaj = atj.split("/")
                 vdw = self._mol.ff.vdwdata[vdwi+":"+vdwj]
-                sigma_i = self.par["cha"][chai][1][1]
-                sigma_j = self.par["cha"][chaj][1][1]
-                # compute sigma_ij
-                alpha_ij = 1.0/np.sqrt(sigma_i*sigma_i+sigma_j*sigma_j)
-                if vdw[0] == "buck6d":
-                    r0, eps = vdw[1]
-                    A = self._settings["vdw_a"]*eps
-                    B = self._settings["vdw_b"]/r0
-                    C = eps*self._settings["vdw_c"]*r0**6
-                    D = 6.0*(self._settings["vdw_dampfact"]*r0)**14
-                    #pstrings.append(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s) % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))
-                    #f.write(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s\n") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))
-                elif vdw[0] == "buck":
-                    A,B,C = vdw[1]
-                    D = 0.
-                elif vdw[0] == "buck6de":
-                     A,B,C,D = vdw[1]
+                if self._settings["chargetype"] == "gaussian":
+                    sigma_i = self.par["cha"][chai][1][1]
+                    sigma_j = self.par["cha"][chaj][1][1]
+                    # compute sigma_ij
+                    alpha_ij = 1.0/np.sqrt(sigma_i*sigma_i+sigma_j*sigma_j)
+                if self._settings["vdwtype"]=="exp6_damped":
+                    if vdw[0] == "buck6d":
+                        r0, eps = vdw[1]
+                        A = self._settings["vdw_a"]*eps
+                        B = self._settings["vdw_b"]/r0
+                        C = eps*self._settings["vdw_c"]*r0**6
+                        D = 6.0*(self._settings["vdw_dampfact"]*r0)**14
+                        #pstrings.append(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s) % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))
+                        #f.write(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s\n") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))
+                    elif vdw[0] == "buck":
+                        A,B,C = vdw[1]
+                        D = 0.
+                    elif vdw[0] == "buck6de":
+                        A,B,C,D = vdw[1]
+                    else:
+                        raise ValueError("unknown pair potential")
+                    if comment:
+                        pstrings.append(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))
+                    else:
+                        pstrings.append(("pair_coeff %5d %5d " + self.parf(5)) % (i+1,j+1, A, B, C, D, alpha_ij))
+                elif self._settings["vdwtype"]=="buck":
+                    if vdw[0] == "buck":
+                        A,B,C = vdw[1]
+                        B=1./B
+                    else:
+                        raise ValueError("unknown pair potential")
+                    if comment:
+                        pstrings.append(("pair_coeff %5d %5d " + self.parf(3) + "   # %s <--> %s") % (i+1,j+1, A, B, C, ati, atj))
+                    else:
+                        pstrings.append(("pair_coeff %5d %5d " + self.parf(3)) % (i+1,j+1, A, B, C))
                 else:
-                    raise ValueError("unknown pair potential")
-                if comment:
-                     pstrings.append(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))
-                else:
-                     pstrings.append(("pair_coeff %5d %5d " + self.parf(5)) % (i+1,j+1, A, B, C, D, alpha_ij))
+                    raise ValueError("unknown pair setting")
         return pstrings
 
 
@@ -504,7 +523,14 @@ class ff2lammps(base):
             # use kspace for the long range electrostatics and the corresponding long for the real space pair
             f.write("\nkspace_style %s %10.4g\n" % (self._settings["kspace_method"], self._settings["kspace_prec"]))
             # for DEBUG f.write("kspace_modify gewald 0.265058\n")
-            f.write("pair_style buck6d/coul/gauss/long %10.4f %10.4f %10.4f\n\n" % (self._settings["vdw_smooth"], self._settings["coul_smooth"], self._settings["cutoff"]))
+            if self._settings["chargetype"] == "gaussian":
+                f.write("pair_style buck6d/coul/gauss/long %10.4f %10.4f %10.4f\n\n" % 
+                    (self._settings["vdw_smooth"], self._settings["coul_smooth"], self._settings["cutoff"]))
+            elif self._settings["chargetype"] == "point":
+                f.write("pair_style buck/coul/long %10.4f\n\n" % 
+                    (self._settings["cutoff"]))
+            else:
+                raise NotImplementedError
         else:
             # use shift damping (dsf)
             f.write("\npair_style buck6d/coul/gauss/dsf %10.4f %10.4f\n\n" % (self._settings["vdw_smooth"], self._settings["cutoff"]))
@@ -546,10 +572,13 @@ class ff2lammps(base):
                     raise ValueError("unknown bond potential")
                 f.write("bond_coeff %5d %s    # %s\n" % (bt_number, pstring, ibt))
         # angle style
-        if self._settings["use_angle_cosine_buck6d"]:
-            f.write("\nangle_style hybrid class2/p6 cosine/buck6d\n\n")                                        
+        if self._settings["vdwtype"]=="buck":
+            f.write("\nangle_style hybrid class2/p6\n\n")
         else:
-            f.write("\nangle_style hybrid class2/p6 cosine/vdwl13\n\n")                
+            if self._settings["use_angle_cosine_buck6d"]:
+                f.write("\nangle_style hybrid class2/p6 cosine/buck6d\n\n")                                        
+            else:
+                f.write("\nangle_style hybrid class2/p6 cosine/vdwl13\n\n")                
         # f.write("\nangle_style class2/mofff\n\n")
         for at in self.par_types["ang"].keys():
             at_number = self.par_types["ang"][at]
@@ -621,7 +650,10 @@ class ff2lammps(base):
                 else:
                     raise ValueError("unknown improper/oop potential")
                 f.write("improper_coeff %5d %s    # %s\n" % (it_number, pstring, iit))
-        f.write("\nspecial_bonds lj 0.0 0.0 1.0 coul 1.0 1.0 1.0\n\n")
+        #f.write("\nspecial_bonds lj 0.0 0.0 1.0 coul 1.0 1.0 1.0\n\n")
+        f.write("\nspecial_bonds lj %4.2f %4.2f %4.2f coul %4.2f %4.2f %4.2f\n\n" %
+            (self._settings["vdw12"],self._settings["vdw13"],self._settings["vdw14"],
+            self._settings["coul12"],self._settings["coul12"],self._settings["coul12"]))
         f.write("# ------------------------ MOF-FF FORCE FIELD END --------------------------\n")
         # write footer
         if footer:
