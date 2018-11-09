@@ -320,9 +320,12 @@ class ff2lammps(base):
         pf = self._settings["parformat"]+" "
         return n*pf
 
-    def write2internal(self,lmps,pair = False):
+    def write2internal(self,lmps,pair = False, charge=False):
         if pair:
             pstrings = self.pairterm_formatter()
+            for p in pstrings: lmps.lmps.command(p)
+        if charge:
+            pstrings = self.charge_formatter()
             for p in pstrings: lmps.lmps.command(p)
         formatter = {"bnd": self.bondterm_formatter,
                 "ang": self.angleterm_formatter,
@@ -336,6 +339,21 @@ class ff2lammps(base):
                     pstrings = formatter[ict](bt_number, pot_type, params)
                     for p in pstrings: lmps.lmps.command(p)
         return
+
+    def charge_formatter(self):
+        pstrings = []
+        for i in range(self._mol.get_natoms()):
+            vdwt  = self.parind["vdw"][i][0]
+            chat  = self.parind["cha"][i][0]
+            at = vdwt+"/"+chat
+            atype = self.plmps_atypes.index(at)+1
+            molnumb = self._mol.molecules.whichmol[i]+1
+            chrgpar    = self.par["cha"][chat]
+            chrg = chrgpar[1][0]
+            pstrings.append("set atom %5d charge %12.6f" % (i+1, chrg))
+        return pstrings
+
+
 
     def pairterm_formatter(self,comment = False):
         # this method behaves different thant the other formatters because it
@@ -379,6 +397,12 @@ class ff2lammps(base):
                     if vdw[0] == "buck":
                         A,B,C = vdw[1]
                         B=1./B
+                    elif vdw[0] =="mm3":
+                        r0, eps = vdw[1]
+                        A = self._settings["vdw_a"]*eps
+                        B = self._settings["vdw_b"]/r0
+                        B = 1./B
+                        C = eps*self._settings["vdw_c"]*r0**6
                     else:
                         raise ValueError("unknown pair potential")
                     if comment:
