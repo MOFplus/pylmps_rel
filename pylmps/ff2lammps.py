@@ -353,6 +353,20 @@ class ff2lammps(base):
             pstrings.append("set atom %5d charge %12.6f" % (i+1, chrg))
         return pstrings
 
+    def get_charges(self):
+        charges = []
+        for i in range(self._mol.get_natoms()):
+            vdwt  = self.parind["vdw"][i][0]
+            chat  = self.parind["cha"][i][0]
+            at = vdwt+"/"+chat
+            atype = self.plmps_atypes.index(at)+1
+            molnumb = self._mol.molecules.whichmol[i]+1
+            chrgpar    = self.par["cha"][chat]
+            chrg = chrgpar[1][0]
+            charges.append(chrg)
+        return np.array(charges)
+
+
 
 
     def pairterm_formatter(self,comment = False):
@@ -387,6 +401,12 @@ class ff2lammps(base):
                         D = 0.
                     elif vdw[0] == "buck6de":
                         A,B,C,D = vdw[1]
+                    elif vdw[0] == "lbuck":
+                        sigma, epsilon, gamma = vdw[1]
+                        A = 6*epsilon*np.exp(gamma)/(gamma-6)
+                        B = gamma/sigma
+                        C = gamma*epsilon*sigma**6/(gamma-6)
+                        D = 0.
                     else:
                         raise ValueError("unknown pair potential")
                     if comment:
@@ -397,6 +417,13 @@ class ff2lammps(base):
                     if vdw[0] == "buck":
                         A,B,C = vdw[1]
                         B=1./B
+                    elif vdw[0] == "lbuck":
+                        sigma, epsilon, gamma = vdw[1]
+                        A = 6*epsilon*np.exp(gamma)/(gamma-6)
+                        B = gamma/sigma
+                        C = gamma*epsilon*sigma**6/(gamma-6)
+                        D = 0.
+                        B = 1./B
                     elif vdw[0] =="mm3":
                         r0, eps = vdw[1]
                         A = self._settings["vdw_a"]*eps
