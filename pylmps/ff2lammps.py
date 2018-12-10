@@ -122,7 +122,7 @@ class ff2lammps(base):
         # general settings                
         self._settings = {}
         # set defaults
-        self._settings["cutoff"] = 12.0
+        self._settings["cutoff"] = 14.0
         self._settings["parformat"] = "%15.8g"
         self._settings["vdw_a"] = 1.84e5
         self._settings["vdw_b"] = 12.0
@@ -138,7 +138,7 @@ class ff2lammps(base):
         for k,v in self._mol.ff.settings.items():
             self._settings[k]=v
         if self._settings["chargetype"]=="gaussian":
-            assert self._settings["vdwtype"]=="exp6_damped"
+            assert self._settings["vdwtype"]=="exp6_damped" or self._settings["vdwtype"]=="wangbuck"
         return 
 
     def adjust_cell(self):
@@ -413,6 +413,15 @@ class ff2lammps(base):
                         pstrings.append(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))
                     else:
                         pstrings.append(("pair_coeff %5d %5d " + self.parf(5)) % (i+1,j+1, A, B, C, D, alpha_ij))
+                elif self._settings["vdwtype"] == "wangbuck":
+                    if vdw[0]=="wbuck":
+                        A,B,C = vdw[1]
+                    else:
+                        raise ValueError("unknown pair potential")
+                    if comment:
+                        pstrings.append(("pair_coeff %5d %5d " + self.parf(4) + "   # %s <--> %s") % (i+1,j+1, A, B, C, alpha_ij, ati, atj))
+                    else:
+                        pstrings.append(("pair_coeff %5d %5d " + self.parf(4)) % (i+1,j+1, A, B, C, alpha_ij))
                 elif self._settings["vdwtype"]=="buck":
                     if vdw[0] == "buck":
                         A,B,C = vdw[1]
@@ -574,12 +583,15 @@ class ff2lammps(base):
             # use kspace for the long range electrostatics and the corresponding long for the real space pair
             f.write("\nkspace_style %s %10.4g\n" % (self._settings["kspace_method"], self._settings["kspace_prec"]))
             # for DEBUG f.write("kspace_modify gewald 0.265058\n")
-            if self._settings["chargetype"] == "gaussian":
+            if self._settings["vdwtype"] == "wangbuck":
+                 f.write("pair_style wangbuck/coul/gauss/long %10.4f %10.4f %10.4f\n\n" % 
+                    (self._settings["vdw_smooth"], self._settings["coul_smooth"], self._settings["cutoff"]))
+            elif self._settings["chargetype"] == "gaussian":
                 f.write("pair_style buck6d/coul/gauss/long %10.4f %10.4f %10.4f\n\n" % 
                     (self._settings["vdw_smooth"], self._settings["coul_smooth"], self._settings["cutoff"]))
             elif self._settings["chargetype"] == "point":
-                f.write("pair_style buck/coul/long %10.4f\n\n" % 
-                    (self._settings["cutoff"]))
+                f.write("pair_style buck/coul/long %10.4f\n\n" % (self._settings["cutoff"]))
+                #f.write("pair_style buck/coul/long %10.4f\n\n" % (14.0))
             else:
                 raise NotImplementedError
         else:
@@ -596,7 +608,7 @@ class ff2lammps(base):
 #                D = 6.0*(self._settings["vdw_dampfact"]*r0)**14
 #                f.write(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s\n") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))            
         # bond style
-        f.write("\nbond_style hybrid class2 morse\n\n")
+        if len(self.par_types["bnd"].keys()) > 0: f.write("\nbond_style hybrid class2 morse\n\n")
         for bt in self.par_types["bnd"].keys():
             bt_number = self.par_types["bnd"][bt]
             for ibt in bt:
@@ -623,13 +635,14 @@ class ff2lammps(base):
                     raise ValueError("unknown bond potential")
                 f.write("bond_coeff %5d %s    # %s\n" % (bt_number, pstring, ibt))
         # angle style
-        if self._settings["vdwtype"]=="buck":
-            f.write("\nangle_style hybrid class2/p6\n\n")
-        else:
-            if self._settings["use_angle_cosine_buck6d"]:
-                f.write("\nangle_style hybrid class2/p6 cosine/buck6d\n\n")                                        
+        if len(self.par_types["ang"].keys()) > 0:
+            if self._settings["vdwtype"]=="buck" or self._settings["vdwtype"]=="wangbuck":
+                f.write("\nangle_style hybrid class2/p6\n\n")
             else:
-                f.write("\nangle_style hybrid class2/p6 cosine/vdwl13\n\n")                
+                if self._settings["use_angle_cosine_buck6d"]:
+                    f.write("\nangle_style hybrid class2/p6 cosine/buck6d\n\n")
+                else:
+                    f.write("\nangle_style hybrid class2/p6 cosine/vdwl13\n\n")
         # f.write("\nangle_style class2/mofff\n\n")
         for at in self.par_types["ang"].keys():
             at_number = self.par_types["ang"][at]
@@ -670,7 +683,7 @@ class ff2lammps(base):
                 else:
                     raise ValueError("unknown angle potential")
         # dihedral style
-        f.write("\ndihedral_style opls\n\n")
+        if len(self.par_types["dih"].keys()) > 0: f.write("\ndihedral_style opls\n\n")
         for dt in self.par_types["dih"].keys():
             dt_number = self.par_types["dih"][dt]
             for idt in dt:
@@ -685,10 +698,11 @@ class ff2lammps(base):
                     raise ValueError("unknown dihedral potential")
                 f.write("dihedral_coeff %5d %s    # %s\n" % (dt_number, pstring, idt))
         # improper/oop style
-        if self._settings["use_improper_umbrella_harmonic"] == True:
-            f.write("\nimproper_style umbrella/harmonic\n\n")
-        else:
-            f.write("\nimproper_style inversion/harmonic\n\n")
+        if len(self.par_types["oop"].keys()) > 0:
+            if self._settings["use_improper_umbrella_harmonic"] == True:
+                f.write("\nimproper_style umbrella/harmonic\n\n")
+            else:
+                f.write("\nimproper_style inversion/harmonic\n\n")
         for it in self.par_types["oop"].keys():
             it_number = self.par_types["oop"][it]
             for iit in it:
