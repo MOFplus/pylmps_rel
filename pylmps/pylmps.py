@@ -194,14 +194,52 @@ class pylmps(mpiobject):
         self.lmps.command("variable vol equal vol")
         # stole this from ASE lammpslib ... needed to recompute the stress ?? should affect only the ouptut ... compute is automatically generated
         self.lmps.command('thermo_style custom pe temp pxx pyy pzz')
+        if self.mol.ff.settings["coreshell"]: self._create_grouping()
         #self.natoms = self.lmps.get_natoms()
         # compute energy of initial config
         self.calc_energy()
         self.report_energies()
         self.md_fixes = []
         # Now connect pdlpio (using pdlpio2)
-        if self.pdlp is None:
-            self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self)
+        #if self.pdlp is None:
+        #    self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self)
+        return
+
+    def _create_grouping(self):
+        """
+        Create some sensible atom grouping. Most importantly there will be
+        groups "all_cores" and "all_shells" that combine all the technical
+        DOFs. This string is supposed to be directly run via the lammps binding.
+        """
+        assert self.mol.ff.settings["coreshell"] == True
+        self.mol.ff.cores = []
+        self.mol.ff.shells = []
+        self.mol.ff.shells2cores = []
+        for i,at in enumerate(self.mol.atypes):
+            if at[0]=="x":
+                self.mol.ff.shells.append(i)
+                self.mol.ff.shells2cores.append(self.mol.conn[i][0])
+            else:
+                self.mol.ff.cores.append(i)
+        for i in self.mol.ff.shells:
+            self.lmps.command("group all_shells id %i" % (i+1))
+        for i in self.mol.ff.cores:
+            self.lmps.command("group all_atoms_and_cores id %i" % (i+1))
+        # TODO: make these variables?
+        self.lmps.command("neighbor 2.0 bin")
+        self.lmps.command("comm_modify vel yes")
+        return 
+
+    def _relax_shells(self):
+        """
+        Relax the shells. Returns a string to be used via the bindings.
+        """
+        s = ""
+        s += "fix freeze all_atoms_and_cores setforce 0.0 0.0 0.0\n"
+        #s += "thermo 1\n"
+        s += "minimize 1e-12 1e-6 100 100\n"
+        s += "unfix freeze"
+        self.lmps.commands_string(s)
         return
 
     def setup_uff(self, uff):

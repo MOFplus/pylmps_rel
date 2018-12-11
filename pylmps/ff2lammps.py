@@ -102,7 +102,10 @@ class ff2lammps(base):
                 e = etup.split("_")[0]
                 e = filter(lambda x: x.isalpha(), e)
                 #self.plmps_mass[at] = elements.mass[e]
-                self.plmps_mass[at] = elements.mass[self.plmps_elems[-1].lower()]
+                try:
+                    self.plmps_mass[at] = elements.mass[self.plmps_elems[-1].lower()]
+                except:
+                    self.plmps_mass[at] = 1.0
                 #print("with mass %12.6f" % elements.mass[e])
 #        for i, ati in enumerate(self.plmps_atypes):
 #            for j, atj in enumerate(self.plmps_atypes[i:],i):
@@ -469,6 +472,10 @@ class ff2lammps(base):
             K3 = -1*K2*params[2]
             K4 = K2*(2.55**2.)*params[3]
             pstring = "bond_coeff %5d class2 %12.6f %12.6f %12.6f %12.6f" % (number,r0, K2, K3, K4)
+        elif pot_type == "harm":
+            r0 = params[1]
+            K2 = params[0]*mdyn2kcal/2.0 
+            pstring = "bond_coeff %5d harmonic %12.6f %12.6f" % (number,K2, r0)
         elif pot_type == "morse":
             r0 = params[1]
             E0 = params[2]
@@ -523,6 +530,7 @@ class ff2lammps(base):
 #                    pstring = "%12.6f %12.6f %12.6f %12.6f %12.6f %12.6f" % (th0, K2, K3, K4, K5, K6)
 #                    # pstring = "%12.6f %12.6f" % (th0, K2)
 #                    f.write("angle_coeff %5d class2/p6    %s    # %s\n" % (at_number, pstring, iat))
+
     def dihedralterm_formatter(self, number, pot_type, params):
         if np.count_nonzero(params) == 0:
             #TODO implement used feature here, quick hack would be to make one dry run
@@ -583,7 +591,10 @@ class ff2lammps(base):
             # use kspace for the long range electrostatics and the corresponding long for the real space pair
             f.write("\nkspace_style %s %10.4g\n" % (self._settings["kspace_method"], self._settings["kspace_prec"]))
             # for DEBUG f.write("kspace_modify gewald 0.265058\n")
-            if self._settings["vdwtype"] == "wangbuck":
+            if self._mol.ff.settings["coreshell"] == True:
+                assert self._settings["vdwtype"] == "buck"
+                f.write("pair_style buck/coul/long/cs %10.4f\n\n" % (self._settings["cutoff"]))
+            elif self._settings["vdwtype"] == "wangbuck":
                  f.write("pair_style wangbuck/coul/gauss/long %10.4f %10.4f %10.4f\n\n" % 
                     (self._settings["vdw_smooth"], self._settings["coul_smooth"], self._settings["cutoff"]))
             elif self._settings["chargetype"] == "gaussian":
@@ -608,7 +619,7 @@ class ff2lammps(base):
 #                D = 6.0*(self._settings["vdw_dampfact"]*r0)**14
 #                f.write(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s\n") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))            
         # bond style
-        if len(self.par_types["bnd"].keys()) > 0: f.write("\nbond_style hybrid class2 morse\n\n")
+        if len(self.par_types["bnd"].keys()) > 0: f.write("\nbond_style hybrid class2 morse harmonic\n\n")
         for bt in self.par_types["bnd"].keys():
             bt_number = self.par_types["bnd"][bt]
             for ibt in bt:
@@ -625,6 +636,10 @@ class ff2lammps(base):
                     K3 = -1*K2*params[2]
                     K4 = K2*(2.55**2.)*params[3]
                     pstring = "class2 %12.6f %12.6f %12.6f %12.6f" % (r0, K2, K3, K4)
+                elif pot_type == "harm":
+                    r0 = params[1]
+                    K2 = params[0]*mdyn2kcal/2.0 
+                    pstring = "harmonic %12.6f %12.6f" % (K2, r0)
                 elif pot_type == "morse":
                     r0 = params[1]
                     E0 = params[2]
