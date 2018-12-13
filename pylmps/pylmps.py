@@ -237,7 +237,7 @@ class pylmps(mpiobject):
         s = ""
         s += "fix freeze all_atoms_and_cores setforce 0.0 0.0 0.0\n"
         #s += "thermo 1\n"
-        s += "minimize 1e-12 1e-6 100 100\n"
+        s += "minimize 1e-12 1e-6 100 200\n"
         s += "unfix freeze"
         self.lmps.commands_string(s)
         return

@@ -733,7 +733,7 @@ class ff2lammps(base):
         #f.write("\nspecial_bonds lj 0.0 0.0 1.0 coul 1.0 1.0 1.0\n\n")
         f.write("\nspecial_bonds lj %4.2f %4.2f %4.2f coul %4.2f %4.2f %4.2f\n\n" %
             (self._settings["vdw12"],self._settings["vdw13"],self._settings["vdw14"],
-            self._settings["coul12"],self._settings["coul12"],self._settings["coul12"]))
+            self._settings["coul12"],self._settings["coul13"],self._settings["coul14"]))
         f.write("# ------------------------ MOF-FF FORCE FIELD END --------------------------\n")
         # write footer
         if footer:
