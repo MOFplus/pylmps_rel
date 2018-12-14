@@ -68,7 +68,7 @@ class pylmps(mpiobject):
         self.control["kspace"] = False
         self.control["oop_umbrella"] = False
         self.control["kspace_gewald"] = 0.0
-        self.control["cutoff"] = 12.0
+        #self.control["cutoff"] = 12.0
         # defaults
         self.pdlp = None
         self.md_dumps = []
@@ -154,7 +154,7 @@ class pylmps(mpiobject):
                 self.ff2lmp.setting("use_improper_umbrella_harmonic", True)
             if self.control["kspace_gewald"] != 0.0:
                 self.ff2lmp.setting("kspace_gewald", self.control["kspace_gewald"])
-            self.ff2lmp.setting("cutoff", self.control["cutoff"])
+            #self.ff2lmp.setting("cutoff", self.control["cutoff"])
         if local:
             self.rundir=self.start_dir
         else:

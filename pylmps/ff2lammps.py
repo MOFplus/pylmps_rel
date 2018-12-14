@@ -125,7 +125,7 @@ class ff2lammps(base):
         # general settings                
         self._settings = {}
         # set defaults
-        self._settings["cutoff"] = 14.0
+        self._settings["cutoff"] = 12.0
         self._settings["parformat"] = "%15.8g"
         self._settings["vdw_a"] = 1.84e5
         self._settings["vdw_b"] = 12.0
@@ -607,7 +607,10 @@ class ff2lammps(base):
                 raise NotImplementedError
         else:
             # use shift damping (dsf)
-            f.write("\npair_style buck6d/coul/gauss/dsf %10.4f %10.4f\n\n" % (self._settings["vdw_smooth"], self._settings["cutoff"]))
+            if self._mol.ff.settings["coreshell"] == True:
+                f.write("\npair_style buck6d/coul/gauss/dsf/cs %10.4f %10.4f\n\n" % (self._settings["vdw_smooth"], self._settings["cutoff"]))
+            else:
+                f.write("\npair_style buck6d/coul/gauss/dsf %10.4f %10.4f\n\n" % (self._settings["vdw_smooth"], self._settings["cutoff"]))
         pairstrings = self.pairterm_formatter(comment = True)
         for s in pairstrings: f.write((s+"\n"))
 #        for i, ati in enumerate(self.plmps_atypes):
