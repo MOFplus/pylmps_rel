@@ -592,8 +592,11 @@ class ff2lammps(base):
             f.write("\nkspace_style %s %10.4g\n" % (self._settings["kspace_method"], self._settings["kspace_prec"]))
             # for DEBUG f.write("kspace_modify gewald 0.265058\n")
             if self._mol.ff.settings["coreshell"] == True:
-                assert self._settings["vdwtype"] == "buck"
-                f.write("pair_style buck/coul/long/cs %10.4f\n\n" % (self._settings["cutoff"]))
+                if self._settings["vdwtype"] == "buck" and self._settings["chargetype"] == "point":
+                    f.write("pair_style buck/coul/long/cs %10.4f\n\n" % (self._settings["cutoff"]))
+                elif self._settings["vdwtype"] == "wangbuck" and self._settings["chargetype"] == "gaussian":
+                    f.write("pair_style wangbuck/coul/gauss/long/cs %10.4f %10.4f %10.4f\n\n" %
+                        (self._settings["vdw_smooth"], self._settings["coul_smooth"], self._settings["cutoff"]))
             elif self._settings["vdwtype"] == "wangbuck":
                  f.write("pair_style wangbuck/coul/gauss/long %10.4f %10.4f %10.4f\n\n" % 
                     (self._settings["vdw_smooth"], self._settings["coul_smooth"], self._settings["cutoff"]))
