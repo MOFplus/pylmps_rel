@@ -205,18 +205,18 @@ class ff2lammps(base):
         # write header 
         header = "LAMMPS data file for mol object with MOF-FF params from www.mofplus.org\n\n"
         header += "%10d atoms\n"      % self._mol.get_natoms()
-        header += "%10d bonds\n"      % self.nric['bnd']
-        header += "%10d angles\n"     % self.nric['ang']
-        header += "%10d dihedrals\n"  % self.nric['dih']
+        if self.nric['bnd'] != 0: header += "%10d bonds\n"      % self.nric['bnd']
+        if self.nric['ang'] != 0: header += "%10d angles\n"     % self.nric['ang']
+        if self.nric['dih'] != 0: header += "%10d dihedrals\n"  % self.nric['dih']
         if self._settings["use_improper_umbrella_harmonic"] == True:
             header += "%10d impropers\n"  % (self.nric['oop']*3) # need all three permutations
         else:
             if self.nric['oop'] != 0: header += "%10d impropers\n"  % self.nric['oop']            
         # types are different paramtere types 
         header += "%10d atom types\n"       % len(self.plmps_atypes)
-        header += "%10d bond types\n"       % len(self.par_types["bnd"]) 
-        header += "%10d angle types\n"      % len(self.par_types["ang"])
-        header += "%10d dihedral types\n"   % len(self.par_types["dih"])
+        if len(self.par_types["bnd"]) != 0: header += "%10d bond types\n"       % len(self.par_types["bnd"]) 
+        if len(self.par_types["ang"]) != 0: header += "%10d angle types\n"      % len(self.par_types["ang"])
+        if len(self.par_types["dih"]) != 0: header += "%10d dihedral types\n"   % len(self.par_types["dih"])
         if len(self.par_types["oop"]) != 0: header += "%10d improper types\n\n" % len(self.par_types["oop"])
         self.adjust_cell()
         xyz = self._mol.get_xyz()
@@ -273,21 +273,21 @@ class ff2lammps(base):
             f.write("%10d %5d %5d %10.5f %12.6f %12.6f %12.6f # %s\n" % (i+1, molnumb, atype, chrg, x,y,z, vdwt))
         self.pprint("The total charge of the system is: %12.8f" % chargesum)
         # write bonds
-        f.write("\nBonds\n\n")
+        if self.nric['bnd'] != 0: f.write("\nBonds\n\n")
         for i in range(len(self.rics["bnd"])):
             bndt = tuple(self.parind["bnd"][i])
             a,b  = self.rics["bnd"][i]
             if bndt in self.par_types['bnd'].keys():
                 f.write("%10d %5d %8d %8d  # %s\n" % (i+1, self.par_types["bnd"][bndt], a+1, b+1, bndt))
         # write angles
-        f.write("\nAngles\n\n")
+        if self.nric['ang'] != 0: f.write("\nAngles\n\n")
         for i in range(len(self.rics["ang"])):
             angt = tuple(self.parind["ang"][i])
             a,b,c  = self.rics["ang"][i]
             if angt in self.par_types['ang'].keys():
                 f.write("%10d %5d %8d %8d %8d  # %s\n" % (i+1, self.par_types["ang"][angt], a+1, b+1, c+1, angt))
         # write dihedrals
-        f.write("\nDihedrals\n\n")
+        if self.nric['dih'] != 0: f.write("\nDihedrals\n\n")
         for i in range(len(self.rics["dih"])):
             diht = tuple(self.parind["dih"][i])
             a,b,c,d  = self.rics["dih"][i]
@@ -478,7 +478,7 @@ class ff2lammps(base):
                 D = 6.0*(self._settings["vdw_dampfact"]*r0)**14
                 f.write(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s\n") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))            
         # bond style
-        f.write("\nbond_style hybrid class2 morse\n\n")
+        if self.nric['bnd'] != 0: f.write("\nbond_style hybrid class2 morse\n\n")
         for bt in self.par_types["bnd"].keys():
             bt_number = self.par_types["bnd"][bt]
             for ibt in bt:
@@ -505,10 +505,11 @@ class ff2lammps(base):
                     raise ValueError("unknown bond potential")
                 f.write("bond_coeff %5d %s    # %s\n" % (bt_number, pstring, ibt))
         # angle style
-        if self._settings["use_angle_cosine_buck6d"]:
-            f.write("\nangle_style hybrid class2/p6 cosine/buck6d\n\n")                                        
-        else:
-            f.write("\nangle_style hybrid class2/p6 cosine/vdwl13\n\n")                
+        if self.nric['ang'] != 0:
+            if self._settings["use_angle_cosine_buck6d"]:
+                f.write("\nangle_style hybrid class2/p6 cosine/buck6d\n\n")                                        
+            else:
+                f.write("\nangle_style hybrid class2/p6 cosine/vdwl13\n\n")                
         # f.write("\nangle_style class2/mofff\n\n")
         for at in self.par_types["ang"].keys():
             at_number = self.par_types["ang"][at]
@@ -549,7 +550,7 @@ class ff2lammps(base):
                 else:
                     raise ValueError("unknown angle potential")
         # dihedral style
-        f.write("\ndihedral_style opls\n\n")
+        if self.nric['dih'] != 0:f.write("\ndihedral_style opls\n\n")
         for dt in self.par_types["dih"].keys():
             dt_number = self.par_types["dih"][dt]
             for idt in dt:

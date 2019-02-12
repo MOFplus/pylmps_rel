@@ -630,7 +630,7 @@ class pylmps(mpiobject):
     LATMIN = LATMIN_sd
 
     def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
-            relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', 
+            relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso',mttkbcond='tri', 
             colvar = None, mttk_volconstraint='yes', log = True, dump=True, append=False):
         """Defines the MD settings
         
@@ -675,7 +675,7 @@ class pylmps(mpiobject):
         # define a string variable holding the name of the stage to be printed before each output line, like
         # in pydlpoly
         label = '%-5s' % (stage.upper()[:5])
-        self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe\
+        self.lmps.command('thermo_style custom step evdwl ecoul elong ebond eangle edihed eimp pe\
                 ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma\
                 pxx pyy pzz pxy pxz pyz spcpu')
         # check if pressure or temperature ramp is requrested. in this case len(T/P) == 2
@@ -744,8 +744,13 @@ class pylmps(mpiobject):
                 self.lmps.command('fix %s_nve all nve' % stage)
                 self.md_fixes = ['%s_temp' % stage,'%s_press' % stage , '%s_nve' % stage]
             elif thermo == 'mttk':
-                self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f tri %12.6f %12.6f %12.6f volconstraint %s'
+                if mttkbcond=='iso':
+                    self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f iso %12.6f %12.6f %12.6f volconstraint %s'
                                % (stage,T1,T2,conversion(relax[0]),p1,p2,conversion(relax[1]),mttk_volconstraint))
+                else:
+                    self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f tri %12.6f %12.6f %12.6f volconstraint %s'
+                               % (stage,T1,T2,conversion(relax[0]),p1,p2,conversion(relax[1]),mttk_volconstraint))
+                
                 self.lmps.command('fix_modify %s_mttknhc energy yes'% (stage,))
                 self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma pxx pyy pzz pxy pxz pyz')
                 self.md_fixes = ['%s_mttknhc'% (stage,)]
