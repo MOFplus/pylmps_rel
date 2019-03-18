@@ -29,6 +29,10 @@ print 'usage: [name] [dump] [pdlp]'
 name = sys.argv[1]
 dumpf = sys.argv[2]
 pdlpf = sys.argv[3]
+try: 
+    offset = int(sys.argv[4])
+except:
+    offset = 0
 stagename = dumpf.rsplit('.')[0]
 # /stage/restart/cell
 # /stage/restart/vel
@@ -80,8 +84,11 @@ for i,l in enumerate(df.xreadlines()):
             if nsteps % 100 == 0: print nsteps
             continue
         ls = l.split()
-        idx = int(ls[0])-1
-        xyz[idx] = numpy.array([float(i) for i in ls[2:5]])
+        idx = int(ls[0])-1 - offset
+        try:
+            xyz[idx] = numpy.array([float(i) for i in ls[2:5]])
+        except:
+            xyz[idx] = numpy.array([float(i) for i in ls[3:6]])
     
 
 write_xyz_to_traj(traj,xyz)

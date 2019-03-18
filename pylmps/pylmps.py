@@ -82,7 +82,8 @@ class pylmps(mpiobject):
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
-            logfile = 'none', bcond=3, kspace = False, uff="UFF4MOF",omit_pdlp=True):
+            logfile = 'none', bcond=3, kspace = False, uff="UFF4MOF",omit_pdlp=True,cutoff_coul=None,
+            cutoff_vdw=12.0):
         """ the setup creates the data structure necessary to run LAMMPS
         
         
@@ -99,6 +100,8 @@ class pylmps(mpiobject):
             uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
         """
         self.control["kspace"] = kspace
+        self.control['cutoff'] = cutoff_vdw
+        self.control['cutoff_coul'] = cutoff_coul
 #        cmdargs = ['-log', logfile]
 #        if screen == False: cmdargs+=['-screen', 'none']
 #        self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
@@ -154,7 +157,10 @@ class pylmps(mpiobject):
                 self.ff2lmp.setting("use_improper_umbrella_harmonic", True)
             if self.control["kspace_gewald"] != 0.0:
                 self.ff2lmp.setting("kspace_gewald", self.control["kspace_gewald"])
-            #self.ff2lmp.setting("cutoff", self.control["cutoff"])
+            if 'cutoff' in self.control:
+                self.ff2lmp.setting("cutoff", self.control["cutoff"])
+            if self.control['cutoff_coul'] is not None:
+                self.ff2lmp.setting('cutoff_coul', self.control['cutoff_coul'])
         if local:
             self.rundir=self.start_dir
         else:
@@ -194,7 +200,10 @@ class pylmps(mpiobject):
         self.lmps.command("variable vol equal vol")
         # stole this from ASE lammpslib ... needed to recompute the stress ?? should affect only the ouptut ... compute is automatically generated
         self.lmps.command('thermo_style custom pe temp pxx pyy pzz')
-        if self.mol.ff.settings["coreshell"]: self._create_grouping()
+        try:
+            if self.mol.ff.settings["coreshell"]: self._create_grouping()
+        except:
+            pass
         #self.natoms = self.lmps.get_natoms()
         # compute energy of initial config
         self.calc_energy()
@@ -453,9 +462,9 @@ class pylmps(mpiobject):
     def set_cell(self, cell, cell_only=False):
         # we have to check here if the box is correctly rotated in the triclinic case
         cell = rotate_cell(cell)
-        if abs(cell[0,1]) > 10e-14: raise IOError("Cell is not properly rotated")
-        if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
-        if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
+        #if abs(cell[0,1]) > 10e-14: raise IOError("Cell is not properly rotated")
+        #if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
+        #if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
 #        cd = cell.diagonal()
         cd = tuple(ff2lammps.ff2lammps.cell2tilts(cell))
         if cell_only:
@@ -650,6 +659,70 @@ class pylmps(mpiobject):
             energy = self.calc_energy()
             if energy > oldenergy:
                 self.pprint("WARNING: ENERGY SEEMS TO RISE!!!!!!")
+            oldenergy = energy
+            cell = self.get_cell()
+            #print ("Current cellvectors:\n%s" % str(cell))
+            cellforce = self.get_cellforce()
+            self.pprint ("Current cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
+            rms_cellforce = np.sqrt(np.sum(cellforce*cellforce)/9.0)
+            self.pprint ("Current rms cellforce: %12.6f" % rms_cellforce)
+            latiter += 1
+            if hasattr(self,'trajfile')==True:
+                from molsys.fileIO import lammpstrj
+                lammpstrj.write_raw(self.trajfile,latiter,self.get_natoms(),self.get_cell(),self.mol.get_elems(),
+                                    self.get_xyz(),np.zeros(self.get_natoms(),dtype='float'))
+            if latiter >= lat_maxiter: stop = True
+            if rms_cellforce < threshlat: stop = True
+        self.pprint ("SD minimizer done")
+        return
+    
+    def LATMIN_sd2(self,threshlat, thresh, lat_maxiter= 100, maxiter=500, fact = 2.0e-3, maxstep = 3.0):
+        """
+        Lattice and Geometry optimization (uses MIN_cg for geom opt and steepest descent in lattice parameters)
+
+        :Parameters:
+            - threshlat (float)  : Threshold in RMS force on the lattice parameters
+            - thresh (float)     : Threshold in RMS force on geom opt (passed on to :class:`pydlpoly.MIN_cg`)
+            - lat_maxiter (int)  : Number of Lattice optimization steepest descent steps
+            - fact (float)       : Steepest descent prefactor (fact x gradient = stepsize)
+            - maxstep (float)    : Maximum stepsize (step is reduced if larger then this value)
+
+        """
+        self.pprint ("\n\nLattice Minimization: using steepest descent for %d steps (threshlat=%10.5f, thresh=%10.5f)" % (lat_maxiter, threshlat, thresh))
+        self.pprint ("                      the geometry is relaxed with MIN_cg at each step for a mximum of %d steps" % maxiter)
+        self.pprint ("Initial Optimization ")
+        self.MIN_cg(thresh, maxiter=maxiter)
+        # to zero the stress tensor
+        oldenergy = self.calc_energy()
+        cell = self.get_cell()
+        self.pprint ("Initial cellvectors:\n%s" % np.array2string(cell,precision=4,suppress_small=True))
+        cellforce = self.get_cellforce()
+        self.pprint ("Initial cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
+        stop = False
+        latiter = 1
+        while not stop:
+            self.pprint ("Lattice optimization step %d" % latiter)
+            step = fact*cellforce
+            steplength = np.sqrt(np.sum(step*step))
+            self.pprint("Unconstrained step length: %10.5f Angstrom" % steplength)
+            if steplength > maxstep:
+                self.pprint("Constraining to a maximum steplength of %10.5f" % maxstep)
+                step *= maxstep/steplength
+            new_cell = cell + step
+            # cell has to be properly rotated for lammps
+            new_cell = rotate_cell(new_cell)
+            self.pprint ("New cell:\n%s" % np.array2string(new_cell,precision=4,suppress_small=True))
+            self.set_cell(new_cell)
+            self.MIN_cg(thresh, maxiter=maxiter)
+            energy = self.calc_energy()
+            if energy > oldenergy:
+                self.pprint("WARNING: ENERGY SEEMS TO RISE!!!!!!")
+                # revert the step!
+                old_cell = cell - step
+                self.set_cell(old_cell)
+                self.MIN_cg(thresh,maxiter=maxiter)
+                fact /= 1.2
+                print(fact)
             oldenergy = energy
             cell = self.get_cell()
             #print ("Current cellvectors:\n%s" % str(cell))
