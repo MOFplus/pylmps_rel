@@ -865,7 +865,7 @@ class pylmps(mpiobject):
                                % (stage,T1,T2,conversion(relax[0]),p1,p2,conversion(relax[1]),mttk_volconstraint))
                 
                 self.lmps.command('fix_modify %s_mttknhc energy yes'% (stage,))
-                self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma pxx pyy pzz pxy pxz pyz')
+                self.lmps.command('thermo_style custom step evdwl ecoul elong ebond eangle edihed eimp pe ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma pxx pyy pzz pxy pxz pyz enthalpy spcpu')
                 self.md_fixes = ['%s_mttknhc'% (stage,)]
             else:
                 raise NotImplementedError
