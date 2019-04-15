@@ -28,7 +28,7 @@ mdyn2kcal = 143.88
 angleunit = 0.02191418
 rad2deg = 180.0/np.pi 
 
-from util import rotate_cell
+from .util import rotate_cell
 
 
 class ff2lammps(base):
@@ -87,7 +87,7 @@ class ff2lammps(base):
         self.plmps_elems = []
         self.plmps_pair_data = {}
         self.plmps_mass = {} # mass from the element .. even if the vdw and cha type differ it is still the same atom
-        for i in xrange(self._mol.get_natoms()):
+        for i in range(self._mol.get_natoms()):
             vdwt = self.parind["vdw"][i][0]
             chrt = self.parind["cha"][i][0]
             at = vdwt+"/"+chrt
@@ -100,7 +100,7 @@ class ff2lammps(base):
                 etup = vdwt.split("->")[1].split("|")[0]
                 etup = etup[1:-2]
                 e = etup.split("_")[0]
-                e = filter(lambda x: x.isalpha(), e)
+                e = [x for x in e if x.isalpha()]
                 #self.plmps_mass[at] = elements.mass[e]
                 try:
                     self.plmps_mass[at] = elements.mass[self.plmps_elems[-1].lower()]
@@ -139,7 +139,7 @@ class ff2lammps(base):
         self._settings["kspace_prec"] = 1.0e-6
         self._settings["use_improper_umbrella_harmonic"] = False # default is to use improper_inversion_harmonic
         # add settings from ff addon
-        for k,v in self._mol.ff.settings.items():
+        for k,v in list(self._mol.ff.settings.items()):
             self._settings[k]=v
         if self._settings["chargetype"]=="gaussian":
             assert self._settings["vdwtype"]=="exp6_damped" or self._settings["vdwtype"]=="wangbuck"
@@ -288,21 +288,21 @@ class ff2lammps(base):
         for i in range(len(self.rics["bnd"])):
             bndt = tuple(self.parind["bnd"][i])
             a,b  = self.rics["bnd"][i]
-            if bndt in self.par_types['bnd'].keys():
+            if bndt in list(self.par_types['bnd'].keys()):
                 f.write("%10d %5d %8d %8d  # %s\n" % (i+1, self.par_types["bnd"][bndt], a+1, b+1, bndt))
         # write angles
         if len(self.rics["ang"]) != 0: f.write("\nAngles\n\n")
         for i in range(len(self.rics["ang"])):
             angt = tuple(self.parind["ang"][i])
             a,b,c  = self.rics["ang"][i]
-            if angt in self.par_types['ang'].keys():
+            if angt in list(self.par_types['ang'].keys()):
                 f.write("%10d %5d %8d %8d %8d  # %s\n" % (i+1, self.par_types["ang"][angt], a+1, b+1, c+1, angt))
         # write dihedrals
         if len(self.rics["dih"]) != 0: f.write("\nDihedrals\n\n")
         for i in range(len(self.rics["dih"])):
             diht = tuple(self.parind["dih"][i])
             a,b,c,d  = self.rics["dih"][i]
-            if diht in self.par_types['dih'].keys():
+            if diht in list(self.par_types['dih'].keys()):
                 f.write("%10d %5d %8d %8d %8d %8d # %s\n" % (i+1, self.par_types["dih"][diht], a+1, b+1, c+1, d+1, diht))
         # write impropers/oops
         if len(self.rics["oop"]) != 0: f.write("\nImpropers\n\n")
@@ -310,7 +310,7 @@ class ff2lammps(base):
             oopt = tuple(self.parind["oop"][i])
             if oopt:
                 a,b,c,d  = self.rics["oop"][i]
-                if oopt in self.par_types['oop'].keys():
+                if oopt in list(self.par_types['oop'].keys()):
                     f.write("%10d %5d %8d %8d %8d %8d # %s\n" % (i+1, self.par_types["oop"][tuple(oopt)], a+1, b+1, c+1, d+1, oopt))
                     if self._settings["use_improper_umbrella_harmonic"] == True:
                         # add the other two permutations of the bended atom (abcd : a is central, d is bent)
@@ -336,7 +336,7 @@ class ff2lammps(base):
                 "dih": self.dihedralterm_formatter,
                 "oop": self.oopterm_formatter}
         for ict in ['bnd','ang','dih','oop']:
-            for bt in self.par_types[ict].keys():
+            for bt in list(self.par_types[ict].keys()):
                 bt_number = self.par_types[ict][bt]
                 for ibt in bt:
                     pot_type, params = self.par[ict][ibt]
@@ -630,8 +630,8 @@ class ff2lammps(base):
 #                D = 6.0*(self._settings["vdw_dampfact"]*r0)**14
 #                f.write(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s\n") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))            
         # bond style
-        if len(self.par_types["bnd"].keys()) > 0: f.write("\nbond_style hybrid class2 morse harmonic\n\n")
-        for bt in self.par_types["bnd"].keys():
+        if len(list(self.par_types["bnd"].keys())) > 0: f.write("\nbond_style hybrid class2 morse harmonic\n\n")
+        for bt in list(self.par_types["bnd"].keys()):
             bt_number = self.par_types["bnd"][bt]
             for ibt in bt:
                 pot_type, params = self.par["bnd"][ibt]
@@ -661,7 +661,7 @@ class ff2lammps(base):
                     raise ValueError("unknown bond potential")
                 f.write("bond_coeff %5d %s    # %s\n" % (bt_number, pstring, ibt))
         # angle style
-        if len(self.par_types["ang"].keys()) > 0:
+        if len(list(self.par_types["ang"].keys())) > 0:
             if self._settings["vdwtype"]=="buck" or self._settings["vdwtype"]=="wangbuck":
                 f.write("\nangle_style hybrid class2/p6\n\n")
             else:
@@ -670,7 +670,7 @@ class ff2lammps(base):
                 else:
                     f.write("\nangle_style hybrid class2/p6 cosine/vdwl13\n\n")
         # f.write("\nangle_style class2/mofff\n\n")
-        for at in self.par_types["ang"].keys():
+        for at in list(self.par_types["ang"].keys()):
             at_number = self.par_types["ang"][at]
             for iat in at:
                 pot_type, params = self.par["ang"][iat]
@@ -709,8 +709,8 @@ class ff2lammps(base):
                 else:
                     raise ValueError("unknown angle potential")
         # dihedral style
-        if len(self.par_types["dih"].keys()) > 0: f.write("\ndihedral_style opls\n\n")
-        for dt in self.par_types["dih"].keys():
+        if len(list(self.par_types["dih"].keys())) > 0: f.write("\ndihedral_style opls\n\n")
+        for dt in list(self.par_types["dih"].keys()):
             dt_number = self.par_types["dih"][dt]
             for idt in dt:
                 pot_type, params = self.par["dih"][idt]
@@ -724,12 +724,12 @@ class ff2lammps(base):
                     raise ValueError("unknown dihedral potential")
                 f.write("dihedral_coeff %5d %s    # %s\n" % (dt_number, pstring, idt))
         # improper/oop style
-        if len(self.par_types["oop"].keys()) > 0:
+        if len(list(self.par_types["oop"].keys())) > 0:
             if self._settings["use_improper_umbrella_harmonic"] == True:
                 f.write("\nimproper_style umbrella/harmonic\n\n")
             else:
                 f.write("\nimproper_style inversion/harmonic\n\n")
-        for it in self.par_types["oop"].keys():
+        for it in list(self.par_types["oop"].keys()):
             it_number = self.par_types["oop"][it]
             for iit in it:
                 pot_type, params = self.par["oop"][iit]

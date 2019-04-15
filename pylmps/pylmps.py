@@ -10,19 +10,17 @@ Created on Sat Apr 22 17:43:56 2017
    in the style of pydlpoly ... 
 
 """
-from __future__ import print_function
-import __builtin__
-
 import numpy as np
 import string
 import os
 from mpi4py import MPI
 
 import molsys
-import ff2lammps
-from util import rotate_cell
+from . import ff2lammps
+from .util import rotate_cell
 from molsys import mpiobject
 wcomm = MPI.COMM_WORLD
+
 # overload print function in parallel case
 #import __builtin__
 #def print(*args, **kwargs):
@@ -281,7 +279,7 @@ class pylmps(mpiobject):
         sim.merge_graphs()
         sim.write_lammps_files()
         # in the uff mode we need access to the unique atom types in terms of their elements
-        self.uff_plmps_elems = [sim.unique_atom_types[i][1]["element"] for i in sim.unique_atom_types.keys()]
+        self.uff_plmps_elems = [sim.unique_atom_types[i][1]["element"] for i in list(sim.unique_atom_types.keys())]
     
         return
 
@@ -521,17 +519,17 @@ class pylmps(mpiobject):
         energy, fxyz   = self.calc_energy_force()
         num_fxyz = np.zeros([self.natoms,3],"float64")
         xyz      = self.get_xyz()
-        for a in xrange(self.natoms):
-            for i in xrange(3):
+        for a in range(self.natoms):
+            for i in range(3):
                 keep = xyz[a,i]
                 xyz[a,i] += delta
                 self.set_xyz(xyz)
                 ep = self.calc_energy()
-                ep_contrib = np.array(self.get_energy_contribs().values())
+                ep_contrib = np.array(list(self.get_energy_contribs().values()))
                 xyz[a,i] -= 2*delta
                 self.set_xyz(xyz)
                 em = self.calc_energy()
-                em_contrib = np.array(self.get_energy_contribs().values())
+                em_contrib = np.array(list(self.get_energy_contribs().values()))
                 xyz[a,i] = keep
                 num_fxyz[a,i] = -(ep-em)/(2.0*delta)
                 # self.pprint("ep em delta_e:  %20.15f %20.15f %20.15f " % (ep, em, ep-em))
@@ -545,7 +543,7 @@ class pylmps(mpiobject):
         """
         num_latforce = np.zeros([3], "d")
         cell = self.get_cell()
-        for i in xrange(3):
+        for i in range(3):
             cell[i,i] += delta
             self.set_cell(cell)
             ep = self.calc_energy(init=True)
@@ -816,7 +814,7 @@ class pylmps(mpiobject):
             self.lmps.command("change_box all ortho")
             # ok, we will also write to the pdlp file
             if append:
-                raise IOError, "TBI"
+                raise IOError("TBI")
             else:
                 # stage is new and we need to define it and set it up
                 self.pdlp.add_stage(stage)
