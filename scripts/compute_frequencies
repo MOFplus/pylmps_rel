@@ -1,0 +1,48 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+########################################################################
+#
+#  Script to apply the ricfit analysis for a moelcular system
+#
+#########################################################################
+
+#import ff_gen.IOmod as IOmod
+import molsys.stow as stow
+import molsys
+import pydlpoly
+import hessutils
+import shutil
+import numpy
+import sys
+import os
+import copy
+import pickle
+
+name = sys.argv[1]
+if len(sys.argv) > 2:
+    optimize=True
+else:
+    optimize=False
+mfpx = name+'.mfpx'
+
+
+m = molsys.mol.from_file(mfpx)
+
+m.addon('ff')
+try:
+    m.ff.read(name)
+except:
+    m.ff.read(name,fit=True)
+pd = pydlpoly.pydlpoly(name)
+pd.setup(mol=m,bcond = 0)
+if optimize == True:
+    ###  tbi: run optimization
+    pass
+
+hess = hessutils.doublehessian(pd);
+hessian = hess()
+hu = hessutils.hessutils(pd.get_xyz(),hessian,pd.get_elements())
+hu.write_molden_input(name+'.freq')
+
+pickle.dump(hessian,open('hessian.pickle','wb'))
