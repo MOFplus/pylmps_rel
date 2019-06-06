@@ -1,4 +1,4 @@
-#!/usr/bin/python -i
+#!/usr/bin/python3 -i
 # -*- coding: utf-8 -*-
 
 ###########################################################################
@@ -11,12 +11,12 @@ import numpy
 import os
 import sys 
 import pandas as pd
-from StringIO import StringIO
+from io import StringIO
 import matplotlib.pyplot as plt
-
+import pickle
 
 logfile = sys.argv[1]
-
+name = logfile.rsplit('.',1)[0]
 #f = open('produ.log')
 f = open(logfile)
 f = f.read()
@@ -49,11 +49,13 @@ data = pd.read_table(StringIO(newtext),delim_whitespace=True)
 #    del text2
 #    del data2
 
-print '"data" contains the log file data'
+print('"data" contains the log file data')
 
 # convenience
-C = [x for x in data.keys() if x.count('Cell') != 0]
+C = [x for x in list(data.keys()) if x.count('Cell') != 0]
 cell = data[C]
 cellabc =data[['Cella','Cellb','Cellc']]
 cellangles =data[['CellAlpha','CellBeta','CellGamma']]
 cell.describe()
+
+pickle.dump(data,open(name+'.pickle','wb'))
