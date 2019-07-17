@@ -49,6 +49,7 @@ evars = {
          }
 enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsions"]
 pressure = ["pxx", "pyy", "pzz", "pxy", "pxz", "pyz"]
+bcond_map = {1:'iso', 2:'aniso', 3:'tri'}
 
 class pylmps(mpiobject):
     
@@ -93,7 +94,7 @@ class pylmps(mpiobject):
             pdlp (str, optional): defaults to None. Filename of the pdlp file 
             restart (str, optional): stage name of the pdlp fiel to restart from
             logfile (str, optional): Defaults to 'none'. logfile
-            bcond (int, optional): Defaults to 2. Boundary Condition
+            bcond (int, optional): Defaults to 3. Boundary Condition - 1: cubic, 2: orthorombic, 3: triclinic
             kspace (bool, optional): Defaults to False. if True: use SPME, else use shift damping for coulomb
             uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
         """
@@ -463,13 +464,21 @@ class pylmps(mpiobject):
         #if abs(cell[0,1]) > 10e-14: raise IOError("Cell is not properly rotated")
         #if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
         #if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
-#        cd = cell.diagonal()
-        cd = tuple(ff2lammps.ff2lammps.cell2tilts(cell))
-        if cell_only:
-            self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f" % cd)
-        else:
-            self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f remap" % cd)
-#        self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f remap" % tuple(cd))
+        if self.bcond >= 2:
+            cd = cell.diagonal()
+            if ((self.bcond == 1) and (numpy.var(cd) > 1e-6)): # check if that is a cubic cell, raise error if not!
+                raise ValueError('the cell to be set is not a cubic cell,diagonals: '+str(cd)) 
+            if cell_only:
+                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f" % tuple(cd))
+            else:
+                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f remap" % tuple(cd))
+            pass # TBI
+        elif self.bcond == 3:
+            cd = tuple(ff2lammps.ff2lammps.cell2tilts(cell))
+            if cell_only:
+                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f" % cd)
+            else:
+                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f remap" % cd)
         return
 
     def get_cellforce(self):
@@ -580,33 +589,22 @@ class pylmps(mpiobject):
     def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0,maxstep=20):
         assert method in ["cg", "sd"]
         thresh *= np.sqrt(3*self.natoms)
-        couplings = {
-                1: 'iso',
-                2: 'aniso',
-                3: 'tri'}
         stop = False
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         counter = 0
         while not stop:
-            self.lmps.command("fix latmin all box/relax %s %f vmax 0.01" % (couplings[self.bcond], p))            
+            self.lmps.command("fix latmin all box/relax %s %f vmax 0.01" % (bcond_map[self.bcond], p))            
             self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
             self.lmps.command("unfix latmin")
             self.lmps.command("min_style %s" % method)
             self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
             self.pprint("CELL :")
             self.pprint(self.get_cell())
-#            print("Stress TENSOR :")
-#            st = self.get_pressure()
-#            print(st)
-#            rms_st = np.sqrt((st*st).sum())
-#            if rms_st<st_thresh: stop=True
             cellforce = self.get_cellforce()
             self.pprint ("Current cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
             rms_cellforce = np.sqrt(np.sum(cellforce*cellforce)/9.0)
             self.pprint ("Current rms cellforce: %12.6f" % rms_cellforce)
-#            latiter += 1
-#            if latiter >= lat_maxiter: stop = True
             if rms_cellforce < threshlat: stop = True
             counter += 1
             if counter >= maxstep: stop=True
@@ -659,7 +657,6 @@ class pylmps(mpiobject):
                 self.pprint("WARNING: ENERGY SEEMS TO RISE!!!!!!")
             oldenergy = energy
             cell = self.get_cell()
-            #print ("Current cellvectors:\n%s" % str(cell))
             cellforce = self.get_cellforce()
             self.pprint ("Current cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
             rms_cellforce = np.sqrt(np.sum(cellforce*cellforce)/9.0)
@@ -723,7 +720,6 @@ class pylmps(mpiobject):
                 print(fact)
             oldenergy = energy
             cell = self.get_cell()
-            #print ("Current cellvectors:\n%s" % str(cell))
             cellforce = self.get_cellforce()
             self.pprint ("Current cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
             rms_cellforce = np.sqrt(np.sum(cellforce*cellforce)/9.0)
@@ -741,7 +737,7 @@ class pylmps(mpiobject):
     LATMIN = LATMIN_sd
 
     def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
-            relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso',mttkbcond='tri', 
+            relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
             colvar = None, mttk_volconstraint='yes', log = True, dump=True, append=False):
         """Defines the MD settings
         
@@ -762,7 +758,7 @@ class pylmps(mpiobject):
             rnstep (int, optional): Defaults to 100. restart writing frequency
             tnstep (int, optional): Defaults to 100. trajectory writing frequency
             timestep (float, optional): Defaults to 1.0. timestep in fs
-            bcond (str, optional): Defaults to 'iso'. boundary condition (check what you set in the setup!) not sure if that does anythign here
+            bcond (str, optional): Defaults to None. by default, the bcond defined in setup is used. only if overwritten here as 'iso' (1), 'aniso' (2) or 'tri' (3), this bcond is used.
             colvar (string, optional): Defaults to None. if given, the Name of the colvar input file. LAMMPS has to be compiled with colvars in order to use it
             mttk_volconstraint (str, optional): Defaults to 'yes'. if 'mttk' is used as barostat, define here whether to constraint the volume
             log (bool, optional): Defaults to True. defines if log file is written
@@ -772,6 +768,7 @@ class pylmps(mpiobject):
         Returns:
             None: None
         """
+        if bcond == None: bcond = bcond_map(self.bcond)
         assert bcond in ['iso', 'aniso', 'tri']
         def conversion(r):
             return r * 1000/timestep 
