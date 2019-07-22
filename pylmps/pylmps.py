@@ -710,14 +710,14 @@ class pylmps(mpiobject):
             self.set_cell(new_cell)
             self.MIN_cg(thresh, maxiter=maxiter)
             energy = self.calc_energy()
-            if energy > oldenergy:
-                self.pprint("WARNING: ENERGY SEEMS TO RISE!!!!!!")
-                # revert the step!
-                old_cell = cell - step
-                self.set_cell(old_cell)
-                self.MIN_cg(thresh,maxiter=maxiter)
-                fact /= 1.2
-                print(fact)
+            #if energy > oldenergy:
+            #    self.pprint("WARNING: ENERGY SEEMS TO RISE!!!!!!")
+            #    # revert the step!
+            #    old_cell = cell - step
+            #    self.set_cell(old_cell)
+            #    self.MIN_cg(thresh,maxiter=maxiter)
+            #    fact /= 1.2
+            #    print(fact)
             oldenergy = energy
             cell = self.get_cell()
             cellforce = self.get_cellforce()
@@ -768,7 +768,7 @@ class pylmps(mpiobject):
         Returns:
             None: None
         """
-        if bcond == None: bcond = bcond_map(self.bcond)
+        if bcond == None: bcond = bcond_map[self.bcond]
         assert bcond in ['iso', 'aniso', 'tri']
         def conversion(r):
             return r * 1000/timestep 
