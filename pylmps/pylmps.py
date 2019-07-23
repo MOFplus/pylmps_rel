@@ -37,17 +37,7 @@ except ImportError:
     print("ImportError: Impossible to load lammps")
 
 
-evars = {
-         "vdW"     : "evdwl",
-         "Coulomb" : "ecoul",
-         "CoulPBC" : "elong",
-         "bond"    : "ebond",
-         "angle"   : "eangle",
-         "oop"     : "eimp",
-         "torsions": "edihed",
-         "epot"    : "pe",
-         }
-enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsions"]
+
 pressure = ["pxx", "pyy", "pzz", "pxy", "pxz", "pyz"]
 bcond_map = {1:'iso', 2:'aniso', 3:'tri'}
 cellpar  = ["cella", "cellb", "cellc", "cellalpha", "cellbeta", "cellgamma"]
@@ -62,14 +52,27 @@ class pylmps(mpiobject):
         cmdargs = ['-log', logfile]
         if screen == False: cmdargs+=['-screen', 'none']
         self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
-        for e in evars:
-            self.lmps.command("variable %s equal %s" % (e, evars[e]))
+        # handle names of energy contributions
+        self.evars = {
+         "vdW"     : "evdwl",
+         "Coulomb" : "ecoul",
+         "CoulPBC" : "elong",
+         "bond"    : "ebond",
+         "angle"   : "eangle",
+         "oop"     : "eimp",
+         "torsions": "edihed",
+         "epot"    : "pe",
+         }
+        self.enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsions"]
+        for e in self.evars:
+            self.lmps.command("variable %s equal %s" % (e, self.evars[e]))
         # TBI
         self.control = {}
-        self.control["kspace"] = False
+        self.control["kspace"] = True
         self.control["oop_umbrella"] = False
         self.control["kspace_gewald"] = 0.0
-        #self.control["cutoff"] = 12.0
+        self.control["cutoff"] = 12.0
+        self.control["cutoff_coul"] = None
         # defaults
         self.pdlp = None
         self.md_dumps = []
@@ -82,9 +85,15 @@ class pylmps(mpiobject):
         }
         return
 
+    def add_ename(self, ename, evar):
+        if ename not in self.evars:
+            self.evars[ename] = evar
+            self.enames.append(ename)
+            self.command("variable %s equal %s" % (ename, evars))
+        return
+
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
-            logfile = 'none', bcond=3, kspace = False, uff="UFF4MOF",omit_pdlp=True,cutoff_coul=None,
-            cutoff_vdw=12.0,dim4lamb=False):
+            logfile = 'none', bcond=3, uff="UFF4MOF", omit_pdlp=True, dim4lamb=False, **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
         
         
@@ -100,9 +109,10 @@ class pylmps(mpiobject):
             kspace (bool, optional): Defaults to False. if True: use SPME, else use shift damping for coulomb
             uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
         """
-        self.control["kspace"] = kspace
-        self.control['cutoff'] = cutoff_vdw
-        self.control['cutoff_coul'] = cutoff_coul
+        # put all known kwargs into self.control
+        for kw in kwargs:
+            if kw in self.control:
+                self.control[kw] = kwargs[kw]
 #        cmdargs = ['-log', logfile]
 #        if screen == False: cmdargs+=['-screen', 'none']
 #        self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
@@ -194,8 +204,8 @@ class pylmps(mpiobject):
         self.lmps.file(self.inp_file)
         os.chdir(self.start_dir)
         # connect variables for extracting
-        for e in evars:
-            self.lmps.command("variable %s equal %s" % (e, evars[e]))
+        for e in self.evars:
+            self.lmps.command("variable %s equal %s" % (e, self.evars[e]))
         for p in pressure:
             self.lmps.command("variable %s equal %s" % (p,p))
         self.lmps.command("variable vol equal vol")
@@ -317,8 +327,8 @@ class pylmps(mpiobject):
         self.bcond = bcond
         self.lmps.file(self.inp_file)
         os.chdir(self.start_dir)
-        for e in evars:
-            self.lmps.command("variable %s equal %s" % (e, evars[e]))
+        for e in self.evars:
+            self.lmps.command("variable %s equal %s" % (e, self.evars[e]))
         for p in pressure:
             self.lmps.command("variable %s equal %s" % (p,p))
         self.lmps.command("variable vol equal vol")
@@ -350,7 +360,7 @@ class pylmps(mpiobject):
         return self.mol.get_elems()
 
     def get_eterm(self, name):
-        assert name in evars
+        assert name in self.evars
         return self.lmps.extract_variable(name,None,0)
 
     def set_atoms_moved(self):
@@ -376,14 +386,14 @@ class pylmps(mpiobject):
         
     def get_energy_contribs(self):
         e = {}
-        for en in enames:
+        for en in self.enames:
             e[en] = self.get_eterm(en)
         return e
         
     def report_energies(self):
         e = self.get_energy_contribs()
         etot = 0.0
-        for en in enames:
+        for en in self.enames:
             etot += e[en]
             self.pprint("%15s : %15.8f kcal/mol" % (en, e[en]))
         self.pprint("%15s : %15.8f kcal/mol" % ("TOTAL", etot))
@@ -789,8 +799,8 @@ class pylmps(mpiobject):
         # in pydlpoly
         label = '%-5s' % (stage.upper()[:5])
         # build the thermo_style list (sent to to lammps as thermos tyle commend at the end)
-        thermo_style = [evars[n] for n in enames]
-        thermo_style += [evars["epot"]]
+        thermo_style = [self.evars[n] for n in self.enames]
+        thermo_style += [self.evars["epot"]]
         # this is md .. add some crucial stuff
         thermo_style += ["ke", "etotal", "temp", "press", "vol"]
         # check if pressure or temperature ramp is requrested. in this case len(T/P) == 2
