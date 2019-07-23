@@ -89,7 +89,7 @@ class pylmps(mpiobject):
         if ename not in self.evars:
             self.evars[ename] = evar
             self.enames.append(ename)
-            self.command("variable %s equal %s" % (ename, evars))
+            self.command("variable %s equal %s" % (ename, evars)) 
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
