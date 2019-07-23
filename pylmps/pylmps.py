@@ -19,15 +19,6 @@ import molsys
 from . import ff2lammps
 from .util import rotate_cell
 from molsys import mpiobject
-wcomm = MPI.COMM_WORLD
-
-# overload print function in parallel case
-#import __builtin__
-#def print(*args, **kwargs):
-#    if mpi_rank == 0:
-#        return __builtin__.print(*args, **kwargs)
-#    else:
-#        return
 
 from molsys.util import pdlpio2
 
@@ -66,7 +57,8 @@ class pylmps(mpiobject):
         self.enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsions"]
         for e in self.evars:
             self.lmps.command("variable %s equal %s" % (e, self.evars[e]))
-        # TBI
+        # control dictionary .. define all defaults here.
+        # change either by setting before setup or use a kwarg in setup
         self.control = {}
         self.control["kspace"] = True
         self.control["oop_umbrella"] = False
@@ -74,8 +66,10 @@ class pylmps(mpiobject):
         self.control["cutoff"] = 12.0
         self.control["cutoff_coul"] = None
         # defaults
+        self.is_setup = False # will be set to True in setup -> to warn if certain functions are used after setup
         self.pdlp = None
         self.md_dumps = []
+        self.external_pot          = []
         # datafuncs
         self.data_funcs = {\
             "xyz"   : self.get_xyz,\
@@ -89,25 +83,54 @@ class pylmps(mpiobject):
         if ename not in self.evars:
             self.evars[ename] = evar
             self.enames.append(ename)
-            self.command("variable %s equal %s" % (ename, evars)) 
+            self.command("variable %s equal %s" % (ename, evar)) 
+        return
+
+    def add_external_potential(self, expot, callback=None):
+        """Add an external Potential
+
+        This potential will be added as a python/invoke fix and needs to be derived from the expot_base class
+        It will be called during optimization and MD.
+        This needs to be called BEFORE setup.
+
+        Note that the callback function must be defined in the global namespace. If no name is given then we generate it based on the 
+        name. If you run multiple instances with the same expot this could lead to problems
+        
+        Args:
+            expot (instance of expot derived class): object that computes the external potential energy and forces
+            callback (string): Defaults to None, name of the callback function in the global namespace (will be generated if None)
+        """
+        assert expot.is_expot == True
+        assert self.is_setup == False, "Must be called before setup"
+        if callback == None:
+            callback_name = "callback_expot_%s" % expot.name
+        else:
+            assert type(callback) == type("")
+            callback_name = callback
+        # this is pretty uuuugly .. but we need the name of the callback function in the global namespace to find it in the fix
+        # TBI we could check here that it does not exist
+        # globals()[callback_name] = expot.callback
+        self.external_pot.append((expot, callback_name))
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
-            logfile = 'none', bcond=3, uff="UFF4MOF", omit_pdlp=True, dim4lamb=False, **kwargs):
+            logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
         
-        
-            mfpx (molsys.mol, optional): Defaults to None. mol instance containing the atomistic system
-            local (bool, optional): Defaults to True. If true: run in current folder, if not: create run folder
-            mol (molsys.mol, optional): Defaults to None. mol instance containing the atomistic system
-            par (str, optional): Defaults to None. filename of the .par file containing the term infos
-            ff (str, optional): Defaults to "MOF-FF". Name of the used Forcefield when assigning from the web MOF+
-            pdlp (str, optional): defaults to None. Filename of the pdlp file 
-            restart (str, optional): stage name of the pdlp fiel to restart from
-            logfile (str, optional): Defaults to 'none'. logfile
-            bcond (int, optional): Defaults to 3. Boundary Condition - 1: cubic, 2: orthorombic, 3: triclinic
-            kspace (bool, optional): Defaults to False. if True: use SPME, else use shift damping for coulomb
-            uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
+            any keyword arguments known to control will be set to control
+
+            Args:    
+                mfpx (molsys.mol, optional): Defaults to None. mol instance containing the atomistic system
+                local (bool, optional): Defaults to True. If true: run in current folder, if not: create run folder
+                mol (molsys.mol, optional): Defaults to None. mol instance containing the atomistic system
+                par (str, optional): Defaults to None. filename of the .par file containing the term infos
+                ff (str, optional): Defaults to "MOF-FF". Name of the used Forcefield when assigning from the web MOF+
+                pdlp (str, optional): defaults to None. Filename of the pdlp file 
+                restart (str, optional): stage name of the pdlp fiel to restart from
+                logfile (str, optional): Defaults to 'none'. logfile
+                bcond (int, optional): Defaults to 3. Boundary Condition - 1: cubic, 2: orthorombic, 3: triclinic
+                uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
+                use_pdlp (bool, optionl): defaults to False, if True use dump_pdlp (must be compiled) 
         """
         # put all known kwargs into self.control
         for kw in kwargs:
@@ -216,20 +239,29 @@ class pylmps(mpiobject):
         except:
             pass
         #self.natoms = self.lmps.get_natoms()
-        # compute energy of initial config
+        # JK experimental feature 
         if dim4lamb is True:
             self.command('fix lamb_fix all property/atom d_lamb ghost yes')
             for ix in range(self.natoms):
                 self.command('set atom %d d_lamb 1.0' % (ix+1,))
+        # setup any registered external potential
+        for expot, callback_name in self.external_pot:
+            # run the expot's setup with self as an argument --> you have access to all info within the mol object
+            expot.setup(self)
+            fix_id = "expot_"+expot.name
+            self.add_ename(expot.name, "f_"+fix_id)
+            self.lmps.command("fix %s all python/invoke 1 post_force %s" % (fix_id, callback_name))
+            self.lmps.command("fix_modify %s energy yes" % fix_id)
+            self.pprint("External Potential %s is set up as fix %s" % (expot.name, fix_id))
+        # compute energy of initial config
         self.calc_energy()
         self.report_energies()
         self.md_fixes = []
         # Now connect pdlpio (using pdlpio2)
-        if omit_pdlp is True: return
-        if self.pdlp is None:
+        if use_pdlp and (self.pdlp is None):
             self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self)
-        #if self.pdlp is None:
-        #    self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self)
+        # set the flag
+        self.is_setup = True
         return
 
     def _create_grouping(self):
@@ -299,7 +331,6 @@ class pylmps(mpiobject):
         self.uff_plmps_elems = [sim.unique_atom_types[i][1]["element"] for i in list(sim.unique_atom_types.keys())]
     
         return
-
 
 
     def setup_data(self,name,datafile,inputfile,mfpx=None,mol=None,local=True,logfile='none',bcond=2,kspace = True):
