@@ -82,7 +82,7 @@ class pylmps(mpiobject):
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
             logfile = 'none', bcond=3, kspace = False, uff="UFF4MOF",omit_pdlp=True,cutoff_coul=None,
-            cutoff_vdw=12.0):
+            cutoff_vdw=12.0,dim4lamb=False):
         """ the setup creates the data structure necessary to run LAMMPS
         
         
@@ -205,6 +205,10 @@ class pylmps(mpiobject):
             pass
         #self.natoms = self.lmps.get_natoms()
         # compute energy of initial config
+        if dim4lamb is True:
+            self.command('fix lamb_fix all property/atom d_lamb ghost yes')
+            for ix in range(self.natoms):
+                self.command('set atom %d d_lamb 1.0' % (ix+1,))
         self.calc_energy()
         self.report_energies()
         self.md_fixes = []
