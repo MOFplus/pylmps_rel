@@ -39,7 +39,26 @@ git checkout newbarostat
 cd to the lammps directory and install via
 
 ```
-cd src
+
+#Follow these steps to add the h5md extension:      # this is necessary to successfully install this lammps version even if you do not want to use h5md or hdf5
+
+cd lammps
+# in the lammps dir 
+cd lib/h5md
+# compile the ch5md library with 
+make -f Makefile.h5cc
+# In order to access the hdf5 files you might have to edit the file Makefile.lammps
+# ###!!!###!!!###!!!### CHANGE IN FILE  
+# Mine looks like this (UBUNTU based MINT):
+
+#  h5md_SYSINC = -I/usr/include/hdf5/serial
+#  h5md_SYSLIB = -L/usr/lib/x86_64-linux-gnu/hdf5/serial/ -lhdf5
+
+#  the first entry points to the leader file (try "locate hdf5.h" to find it)
+#  the second entry points to the lib (try "locate libhdf5")
+cd ../../src
+
+#cd src
 
 make yes-USER-COLVARS
 make yes-CLASS2
@@ -49,8 +68,9 @@ make yes-MC
 make yes-USER-MOFFF
 make yes-USER-MISC
 make yes-MOLECULE
+make yes-USER-REAXC
 
-  --- by default we install the colvars package. very useful!
+#  --- by default we install the colvars package. very useful!
 
 cd ../lib/colvars/
 make -f Makefile.g++
