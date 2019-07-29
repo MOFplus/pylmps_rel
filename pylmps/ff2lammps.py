@@ -19,6 +19,7 @@ import copy
 import molsys
 import molsys.util.elems as elements
 from molsys.addon import base
+from molsys.util.timing import timer, Timer
 
 import logging
 logger = logging.getLogger('molsys.ff2lammps')
@@ -32,7 +33,7 @@ from .util import rotate_cell
 
 
 class ff2lammps(base):
-    
+   
     def __init__(self, mol,setup_FF=True):
         """
         setup system and get parameter 
@@ -42,13 +43,20 @@ class ff2lammps(base):
             - mol: mol object with ff addon and params assigned
         """
         super(ff2lammps,self).__init__(mol)
+        # generate a timer
+        self.timer = Timer(name = "ff2lammps")
+        self.timer.start("init")
         # generate the force field
         if setup_FF != True:
             return
+        self.timer.start("setup pair pots")
         self._mol.ff.setup_pair_potentials()
+        self.timer.stop()
         # set up the molecules
+        self.timer.start("molecules addon")
         self._mol.addon("molecules")
         self._mol.molecules()
+        self.timer.stop()
         # make lists of paramtypes and conenct to mol.ff obejcts as shortcuts
         self.ricnames = ["bnd", "ang", "dih", "oop", "cha", "vdw"]
         self.nric = {}
@@ -65,6 +73,7 @@ class ff2lammps(base):
             par_types = {}
             i = 1
             iric = 0
+            self.timer.start("par loop %s" % r)
             for pil in self.parind[r]:
                 if pil:
                     pil.sort()
@@ -77,6 +86,7 @@ class ff2lammps(base):
                     if not tpil in par_types:
                         par_types[tpil] = i
                         i += 1
+            self.timer.stop()
             self.par_types[r] = par_types
             self.npar[r] = i-1
             self.nric[r] = iric
@@ -143,6 +153,7 @@ class ff2lammps(base):
             self._settings[k]=v
         if self._settings["chargetype"]=="gaussian":
             assert self._settings["vdwtype"]=="exp6_damped" or self._settings["vdwtype"]=="wangbuck"
+        self.timer.stop()
         return 
 
     def adjust_cell(self):
@@ -208,7 +219,8 @@ class ff2lammps(base):
         else:
             self._settings[s] = val
             return
-        
+
+    @timer("write data")    
     def write_data(self, filename="tmp.data"):
         if self.mpi_rank > 0: return
         self.data_filename = filename
@@ -324,6 +336,7 @@ class ff2lammps(base):
         pf = self._settings["parformat"]+" "
         return n*pf
 
+    @timer("write 2 internal")
     def write2internal(self,lmps,pair = False, charge=False):
         if pair:
             pstrings = self.pairterm_formatter()
@@ -560,6 +573,7 @@ class ff2lammps(base):
         return ["improper_coeff %5d %s" % (number, pstring)]
 
 
+    @timer("write input")
     def write_input(self, filename = "lmp.input", header=None, footer=None, kspace=False):
         """
         NOTE: add read data ... fix header with periodic info
@@ -753,3 +767,8 @@ class ff2lammps(base):
             ff.close()
         f.close()
         return
+
+    def report_timer(self):
+        self.timer.write()
+
+    

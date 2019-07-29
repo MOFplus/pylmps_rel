@@ -22,6 +22,8 @@ from molsys import mpiobject
 
 from molsys.util import pdlpio2
 
+from molsys.util.timing import timer, Timer
+
 try:
     from lammps import lammps
 except ImportError:
@@ -39,6 +41,8 @@ class pylmps(mpiobject):
     def __init__(self, name, logfile = "none", screen = True, mpi_comm=None, out = None):
         super(pylmps, self).__init__(mpi_comm,out)
         self.name = name
+        # get timer
+        self.timer = Timer("pylmps")
         # start lammps
         cmdargs = ['-log', logfile]
         if screen == False: cmdargs+=['-screen', 'none']
@@ -132,6 +136,7 @@ class pylmps(mpiobject):
                 uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
                 use_pdlp (bool, optionl): defaults to False, if True use dump_pdlp (must be compiled) 
         """
+        self.timer.start("setup")
         # put all known kwargs into self.control
         for kw in kwargs:
             if kw in self.control:
@@ -190,7 +195,9 @@ class pylmps(mpiobject):
                     self.mol.ff.assign_params(ff)
             self.mol.bcond = bcond
             # now generate the converter
+            self.timer.start("init ff2lammps")
             self.ff2lmp = ff2lammps.ff2lammps(self.mol)
+            self.timer.stop()
             # adjust the settings
             if self.control["oop_umbrella"]:
                 self.pprint("using umbrella_harmonic for OOP terms")
@@ -229,11 +236,17 @@ class pylmps(mpiobject):
         else:
             # before writing output we can adjust the settings in ff2lmp
             # TBI
+            self.timer.start("write data")
             self.ff2lmp.write_data(filename=self.data_file)
+            self.timer.stop()
+            self.timer.start("write input")
             self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"])
+            self.timer.stop()
         # now in and data exist and we can start up    
         if not self.use_reaxff ==True:
+            self.timer.start("lammps read input")
             self.lmps.file(self.inp_file)
+            self.timer.stop()
         os.chdir(self.start_dir)
         # connect variables for extracting
         for e in self.evars:
@@ -271,6 +284,10 @@ class pylmps(mpiobject):
             self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self)
         # set the flag
         self.is_setup = True
+        # report timing
+        self.timer.write()
+        if not self.use_uff and not self.use_reaxff:
+            self.ff2lmp.report_timer()
         return
 
     def _create_grouping(self):
