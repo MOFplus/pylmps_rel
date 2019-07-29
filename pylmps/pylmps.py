@@ -125,9 +125,13 @@ class pylmps(mpiobject):
         self.start_dir = os.getcwd()+"/"
         # if ff is set to "UFF" assignement is done via a modified lammps_interface from peter boyds
         self.use_uff = False
+        self.use_reaxff = False
         if ff == "UFF":
             self.pprint("USING UFF SETUP!! EXPERIMENTAL!!")
             self.use_uff = True
+        if ff == "ReaxFF":
+            self.pprint("USING ReaxFF SETUP!! EXPERIMENTAL!!")
+            self.use_reaxff = True
         # set the pdlp filename
         if pdlp is None:
             self.pdlpname = self.start_dir + self.name + ".pdlp"
@@ -136,6 +140,8 @@ class pylmps(mpiobject):
         # get the mol instance either directly or from file or as an argument
         if mol != None:
             self.mol = mol
+        elif self.use_reaxff == True:
+            self.mol = molsys.mol()
         else:
             if restart is not None:
                 # The mol object should be read from the pdlp file
@@ -150,7 +156,7 @@ class pylmps(mpiobject):
         # get the forcefield if this is not done already (if addon is there assume params are exisiting .. TBI a flag in ff addon to indicate that params are set up)
         self.data_file = self.name+".data"
         self.inp_file  = self.name+".in"
-        if not self.use_uff:
+        if not self.use_uff and not self.use_reaxff:
             if not "ff" in self.mol.loaded_addons:
                 self.mol.addon("ff")
                 if par or ff=="file":
@@ -195,13 +201,16 @@ class pylmps(mpiobject):
         self.bcond = bcond
         if self.use_uff:
             self.setup_uff(uff)
+        elif self.use_reaxff:
+            self.setup_reaxff(mfpx = mfpx)
         else:
             # before writing output we can adjust the settings in ff2lmp
             # TBI
             self.ff2lmp.write_data(filename=self.data_file)
             self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"])
         # now in and data exist and we can start up    
-        self.lmps.file(self.inp_file)
+        if not self.use_reaxff ==True:
+            self.lmps.file(self.inp_file)
         os.chdir(self.start_dir)
         # connect variables for extracting
         for e in self.evars:
@@ -299,8 +308,83 @@ class pylmps(mpiobject):
         self.uff_plmps_elems = [sim.unique_atom_types[i][1]["element"] for i in list(sim.unique_atom_types.keys())]
     
         return
-
-
+    
+    def setup_reaxff(self, dt = .1, Temperature = 300, Damping = 100, mfpx = None):
+        import mol2lammps
+        self.lmps.command('units real')                            #equal
+        self.lmps.command('atom_style charge')                     #equal
+        self.lmps.command('atom_modify map hash')                  #equal
+        #create input file from xyz coordinates
+        path = os.getcwd()
+        folder = os.listdir(path)
+        infile = False
+        if folder.count(self.name) == 1: 
+            print 'use existing in file'
+            infile = True
+        if not mfpx == None:
+            mfpx = self.name + ".mfpx"
+            self.mol.read(mfpx)
+            print 'use mfpx'
+        elif folder.count(self.name+'.mfpx') == 1:
+            self.mol.read(self.name+'.mfpx')
+            print 'use mfpx file'
+        elif folder.count(self.name+'.xyz') == 1:
+            self.mol.read(self.name+'.xyz','xyz')
+            print 'use xyz file'
+        if infile == False:
+            objekt = mol2lammps.mol2lammps(self.mol)
+            objekt.write_data(self.name)
+        self.lmps.command('read_data ' +self.name)           #equal
+        # . init force field
+        ff = 'pair_style reax/c NULL'                             #lmps_control
+        #if Memory: ff += ' mincap %d' %Memory         
+        #if Safezone: ff += ' safezone %.02f' %Safezone
+        self.lmps.command(ff)
+        # flexibility for elements: h, c, o
+        f = open(self.name,'r')
+        line = f.readline()
+        while len(line)<5 or line.split()[0] != 'Masses':
+            line = f.readline()
+        masses = []
+        f.readline()
+        line = f.readline()
+        while len(line)> 3:
+            masses.append(round(float(line.split()[1])))
+            line = f.readline()
+        order = ''
+        for mass in masses:
+            if mass == 1.0: order += 'H '
+            elif mass == 12.0: order += 'C '
+            elif mass == 16.0: order += 'O '
+            else:
+                print masses
+                print 'FF is not defined for rounded mass = ', mass
+                print 'normal order of H C O is defined'
+                order = ' H C O '
+                break
+        self.lmps.command('pair_coeff * * ffield.reax.cho '+order)
+        # . setup parameters
+        self.dt = dt
+        self.lmps.command('fix qeq all qeq/reax 1 0.0 10.0 1e-6 reax/c')       #equal (nur bezeichnung qeq anders)
+        self.lmps.command('neighbor 2 bin')        #equal
+        self.lmps.command('neigh_modify every 10 delay 0 check no')                    #equal
+        #self.lmps.command('timestep %.02f' %self.dt)   #0.25 fest
+        # . setup ouput: each 1ps for default timestep of 0.1fs
+        # . velocities
+        self.T = Temperature
+        #if self.velocityflag:
+         #       self.lmps.command('velocity all create %.01f %d mom yes rot yes' %(self.T, Seed)) #velocity        all create 2000 10 mom yes rot yes
+          #      print 'set random velocities'
+        # . setup
+        tnstep = 100 
+        BondFile = 'bonds.log'
+        self.lmps.command('fix bnd all reax/c/bonds %d %s' %(tnstep, BondFile))
+        self.lmps.command('reset_timestep 0')
+        #self.lmps.command('fix 2 all nvt temp %.01f %.01f %.01f' %(self.T, self.T, Damping))   #temperatur, variabel
+        #self.lmps.command('compute ape all pe/atom')       #ape ist bezeichnung pe/atom (potential energy for each atom)
+        #wird als c_ape bei dump_keys ausgegeben      #spec.dat' and 'reac.dat' in which preoptimized geometries and their potential energies
+        # . return LAMMPS object
+        
 
     def setup_data(self,name,datafile,inputfile,mfpx=None,mol=None,local=True,logfile='none',bcond=2,kspace = True):
         ''' setup method for use with a lammps data file that contains the system information
