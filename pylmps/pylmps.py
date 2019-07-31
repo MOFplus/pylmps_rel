@@ -341,11 +341,13 @@ class pylmps(mpiobject):
     
         return
 
-    def setup_reaxff(self, dt = .1, Temperature = 300, Damping = 100, mfpx = None):
+    def setup_reaxff(self, dt = .1, Temperature = 300, Damping = 100, mfpx = None, periodic = True):
         import mol2lammps
-        self.lmps.command('units real')                            #equal
-        self.lmps.command('atom_style charge')                     #equal
-        self.lmps.command('atom_modify map hash')                  #equal
+        self.lmps.command('units real')
+        self.lmps.command('atom_style charge')
+        self.lmps.command('atom_modify map hash')
+        if periodic == True:
+            self.lmps.command('boundary p p p')
         #create input file from xyz coordinates
         path = os.getcwd()
         folder = os.listdir(path)
