@@ -286,7 +286,7 @@ class ff2lammps(base):
             chat  = self.parind["cha"][i][0]
             at = vdwt+"/"+chat
             atype = self.plmps_atypes.index(at)+1
-            molnumb = self._mol.molecules.whichmol[i]+1
+            molnumb = self._mol.molecules.mgroups["molecules"].whichmol[i]+1
             chrgpar    = self.par["cha"][chat]
             assert chrgpar[0] == "gaussian", "Only Gaussian type charges supported"
             chrg = chrgpar[1][0]
