@@ -32,7 +32,7 @@ class mol2lammps(base):
         self._mol = mol
         return
         
-    def write_data(self, filename="tmp.data"):
+    def write_data(self, filename="tmp.data", centered = False):
         self.data_filename = filename
         f = open(filename, "w")
         natypes = 3
@@ -41,7 +41,6 @@ class mol2lammps(base):
         header = "LAMMPS data file for mol object with MOF-FF params from www.mofplus.org\n\n"
         header += "%10d atoms\n"      % self._mol.get_natoms()
         header += "%10d atom types\n\n"     %natypes 
-        
         xyz = self._mol.get_xyz()
         if self._mol.bcond == 0:
             # in the nonperiodic case center the molecule in the origin
@@ -63,19 +62,24 @@ class mol2lammps(base):
             cmin = np.zeros([3])
             cmax = cell.diagonal()
             tilts = (cell[1,0], cell[2,0], cell[2,1])
-        #if self._mol.bcond >= 0:
-        #theres presumably no use for this part, it produces a non cubic cell
-         #   header += '%12.6f %12.6f  xlo xhi\n' % (cmin[0], cmax[0])
-          #  header += '%12.6f %12.6f  ylo yhi\n' % (cmin[1], cmax[1])
-           # header += '%12.6f %12.6f  zlo zhi\n' % (cmin[2], cmax[2])
+        #bcond: sets boundary conditions. 2 for cubic and orthorombic systems, 3 for triclinic systems
+        if centered == False:       #hack: here systems which are centered at the origin are used.
+            cmin = (-cmax)        
         if self._mol.bcond >= 0:
-            alle = []
-            for i in range(3):
-                alle.append(abs(cmin[i]))
-                alle.append(abs(cmax[i]))
-            header += '%12.6f %12.6f  xlo xhi\n' % (-max(alle), max(alle))
-            header += '%12.6f %12.6f  ylo yhi\n' % (-max(alle), max(alle))
-            header += '%12.6f %12.6f  zlo zhi\n' % (-max(alle), max(alle))
+        #theres presumably no use for this part, it produces a non cubic cell
+            header += '%12.6f %12.6f  xlo xhi\n' % (cmin[0], cmax[0])
+            header += '%12.6f %12.6f  ylo yhi\n' % (cmin[1], cmax[1])
+            header += '%12.6f %12.6f  zlo zhi\n' % (cmin[2], cmax[2])
+            '''
+            if self._mol.bcond >= 0:
+                alle = []
+                for i in range(3):
+                    alle.append(abs(cmin[i]))
+                    alle.append(abs(cmax[i]))
+                header += '%12.6f %12.6f  xlo xhi\n' % (-max(alle), max(alle))
+                header += '%12.6f %12.6f  ylo yhi\n' % (-max(alle), max(alle))
+                header += '%12.6f %12.6f  zlo zhi\n' % (-max(alle), max(alle))
+            '''
         if self._mol.bcond > 2:
             header += '%12.6f %12.6f %12.6f  xy xz yz\n' % tilts
         # NOTE in lammps masses are mapped on atomtypes which indicate vdw interactions (pair potentials)

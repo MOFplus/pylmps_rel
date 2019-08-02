@@ -403,15 +403,23 @@ class pylmps(mpiobject):
             masses.append(round(float(line.split()[1])))
             line = f.readline()
         order = ''
+        self.reaxff_plmps_elems = []
         for mass in masses:
-            if mass == 1.0: order += 'H '
-            elif mass == 12.0: order += 'C '
-            elif mass == 16.0: order += 'O '
+            if mass == 1.0: 
+                order += 'H '
+                self.reaxff_plmps_elems.append('H')
+            elif mass == 12.0: 
+                order += 'C '
+                self.reaxff_plmps_elems.append('C')
+            elif mass == 16.0: 
+                order += 'O '
+                self.reaxff_plmps_elems.append('O')
             else:
                 print masses
                 print 'FF is not defined for rounded mass = ', mass
                 print 'normal order of H C O is defined'
                 order = ' H C O '
+                self.reaxff_plmps_elems = ['H','C','O']
                 break
         self.lmps.command('pair_coeff * * ffield.reax.cho '+order)
         # . setup parameters
@@ -435,6 +443,7 @@ class pylmps(mpiobject):
         #self.lmps.command('compute ape all pe/atom')       #ape ist bezeichnung pe/atom (potential energy for each atom)
         #wird als c_ape bei dump_keys ausgegeben      #spec.dat' and 'reac.dat' in which preoptimized geometries and their potential energies
         # . return LAMMPS object
+        
 
     def setup_data(self,name,datafile,inputfile,mfpx=None,mol=None,local=True,logfile='none',bcond=2,kspace = True):
         ''' setup method for use with a lammps data file that contains the system information
@@ -951,6 +960,8 @@ class pylmps(mpiobject):
             self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
             if self.use_uff:
                 plmps_elems = self.uff_plmps_elems
+            elif self.use_reaxff:
+                plmps_elems = self.reaxff_plmps_elems
             else:
                 plmps_elems = self.ff2lmp.plmps_elems
             self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(plmps_elems)))
