@@ -1,6 +1,6 @@
 # pylmps
 
-Pylmps is a pyhton wrapper for lammps ( i.e. for the python interface to lammps). It is made to have a similar syntax as [pydlpoly](https://github.com/MOFplus/pydlpoly).
+Pylmps is a Python wrapper for lammps ( i.e. for the python interface to lammps). It is made to have a similar syntax as [pydlpoly](https://github.com/MOFplus/pydlpoly).
 
 ## Installing
 
@@ -78,6 +78,7 @@ make yes-MC
 make yes-USER-MOFFF
 make yes-USER-MISC
 make yes-MOLECULE
+make yes-H5MD
 make yes-USER-REAXC
 
 #  --- by default we install the colvars package. very useful!
