@@ -6,3 +6,4 @@ doc/_build/*
 *.in
 *.data
 .pytest*
+*.dump
