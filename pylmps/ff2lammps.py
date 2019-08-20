@@ -62,6 +62,7 @@ class ff2lammps(base):
         for r in self.ricnames:
             self.nric[r] = 0
             self.par_types[r] = {}
+        self.reax=False
         if reax:
             self.reax = True
             self.plmps_atypes = list(set(self._mol.get_elems()))
@@ -301,7 +302,7 @@ class ff2lammps(base):
         # write Atoms
         # NOTE ... this is MOF-FF and we silently assume that all charge params are Gaussians!!
         f.write("\nAtoms\n\n")
-        if reax:
+        if self.reax:
             elems = self._mol.get_elems()
             for i in range(self._mol.get_natoms()):
                 at = elems[i]
