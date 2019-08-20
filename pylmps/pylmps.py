@@ -970,7 +970,7 @@ class pylmps(mpiobject):
         if traj is not None:
             # NOTE this is a hack .. need to make cells orhto for bcond=1&2 automatically. add triclinic cells to pdlp
             assert self.mol.bcond < 3
-            self.lmps.command("change_box all ortho")
+            #self.lmps.command("change_box all ortho")
             # ok, we will also write to the pdlp file
             if append:
                 raise IOError("TBI")
@@ -982,7 +982,7 @@ class pylmps(mpiobject):
                 self.pdlp.close()
                 # now create the dump
                 traj_string = string.join(traj)
-                print("dump %s all pdlp %i %s.pdlp stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
                 self.lmps.command("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
                 self.md_dumps.append(stage+"_pdlp")
         # do velocity startup
