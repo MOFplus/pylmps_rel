@@ -34,13 +34,19 @@ from .util import rotate_cell
 
 class ff2lammps(base):
    
-    def __init__(self, mol,setup_FF=True):
+    def __init__(self, mol,setup_FF=True, reax=False):
         """
         setup system and get parameter 
         
         :Parameters:
         
             - mol: mol object with ff addon and params assigned
+            - setup_FF [bool]: defaults to True, skip Ff setup when False
+            - reax [bool]: defaults to False: if True then ReaxFF is used
+
+        In case of ReaxFF no ff addon is present and no bonds/angles/dihedrals/oops are written
+        The atom_style is charge (no mol-ID)
+
         """
         super(ff2lammps,self).__init__(mol)
         # generate a timer
@@ -48,6 +54,21 @@ class ff2lammps(base):
         self.timer.start("init")
         # generate the force field
         if setup_FF != True:
+            return
+        # init some basic stuff always needed
+        self.ricnames = ["bnd", "ang", "dih", "oop", "cha", "vdw"]
+        self.nric = {}
+        self.par_types = {}
+        for r in self.ricnames:
+            self.nric[r] = 0
+            self.par_types[r] = {}
+        if reax:
+            self.reax = True
+            self.plmps_atypes = list(set(self._mol.get_elems()))
+            self.plmps_atypes.sort()
+            self.plmps_mass = {}
+            for at in self.plmps_atypes:
+                self.plmps_mass[at] = elements.mass[at]
             return
         self.timer.start("setup pair pots")
         self._mol.ff.setup_pair_potentials()
@@ -58,9 +79,6 @@ class ff2lammps(base):
         self._mol.molecules()
         self.timer.stop()
         # make lists of paramtypes and conenct to mol.ff obejcts as shortcuts
-        self.ricnames = ["bnd", "ang", "dih", "oop", "cha", "vdw"]
-        self.nric = {}
-        self.par_types = {}
         self.par = {}
         self.parind = {}
         self.rics = {}
@@ -225,16 +243,20 @@ class ff2lammps(base):
         if self.mpi_rank > 0: return
         self.data_filename = filename
         f = open(filename, "w")
-        # write header 
-        header = "LAMMPS data file for mol object with MOF-FF params from www.mofplus.org\n\n"
+        # write header
+        if self.reax:
+            header = "LAMMPS data file for mol object using ReaxFF\n\n"
+        else: 
+            header = "LAMMPS data file for mol object with MOF-FF params from www.mofplus.org\n\n"
         header += "%10d atoms\n"      % self._mol.get_natoms()
         if self.nric['bnd'] != 0: header += "%10d bonds\n"      % self.nric['bnd']
         if self.nric['ang'] != 0: header += "%10d angles\n"     % self.nric['ang']
         if self.nric['dih'] != 0: header += "%10d dihedrals\n"  % self.nric['dih']
-        if self._settings["use_improper_umbrella_harmonic"] == True:
-            header += "%10d impropers\n"  % (self.nric['oop']*3) # need all three permutations
-        else:
-            if self.nric['oop'] != 0: header += "%10d impropers\n"  % self.nric['oop']            
+        if self.nric['oop'] != 0:
+            if self._settings["use_improper_umbrella_harmonic"] == True:
+                header += "%10d impropers\n"  % (self.nric['oop']*3) # need all three permutations
+            else:
+                header += "%10d impropers\n"  % self.nric['oop']            
         # types are different paramtere types 
         header += "%10d atom types\n"       % len(self.plmps_atypes)
         if len(self.par_types["bnd"]) != 0: header += "%10d bond types\n"       % len(self.par_types["bnd"]) 
@@ -273,28 +295,37 @@ class ff2lammps(base):
         #   => we do NOT use the masses set up in the mol object because of this mapping
         #   so we need to extract the element from the vdw paramter name which is a bit clumsy (DONE IN INIT NOW)
         header += "\nMasses\n\n"        
-        for i in range(len(self.plmps_atypes)):
-            at = self.plmps_atypes[i]
+        for i, at in enumerate(self.plmps_atypes):
             header += "%5d %10.4f # %s\n" % (i+1, self.plmps_mass[at], at)
         f.write(header)
         # write Atoms
         # NOTE ... this is MOF-FF and we silently assume that all charge params are Gaussians!!
         f.write("\nAtoms\n\n")
-        chargesum = 0.0
-        for i in range(self._mol.get_natoms()):
-            vdwt  = self.parind["vdw"][i][0]
-            chat  = self.parind["cha"][i][0]
-            at = vdwt+"/"+chat
-            atype = self.plmps_atypes.index(at)+1
-            molnumb = self._mol.molecules.mgroups["molecules"].whichmol[i]+1
-            chrgpar    = self.par["cha"][chat]
-            assert chrgpar[0] == "gaussian", "Only Gaussian type charges supported"
-            chrg = chrgpar[1][0]
-            chargesum+=chrg
-            x,y,z = xyz[i]
-            #   ind  atype molnumb chrg x y z # comment
-            f.write("%10d %5d %5d %10.5f %12.6f %12.6f %12.6f # %s\n" % (i+1, molnumb, atype, chrg, x,y,z, vdwt))
-        self.pprint("The total charge of the system is: %12.8f" % chargesum)
+        if reax:
+            elems = self._mol.get_elems()
+            for i in range(self._mol.get_natoms()):
+                at = elems[i]
+                atype = self.plmps_atypes.index(at)+1
+                x,y,z = xyz[i]
+                # for reaxff chrg = 0.0 becasue it is set by Qeq
+                #   ind  atype chrg x y z # comment
+                f.write("%10d %5d %10.5f %12.6f %12.6f %12.6f # %s\n" % (i+1, atype, chrg, x,y,z, vdwt))
+        else:
+            chargesum = 0.0
+            for i in range(self._mol.get_natoms()):
+                vdwt  = self.parind["vdw"][i][0]
+                chat  = self.parind["cha"][i][0]
+                at = vdwt+"/"+chat
+                atype = self.plmps_atypes.index(at)+1
+                molnumb = self._mol.molecules.mgroups["molecules"].whichmol[i]+1
+                chrgpar    = self.par["cha"][chat]
+                assert chrgpar[0] == "gaussian", "Only Gaussian type charges supported"
+                chrg = chrgpar[1][0]
+                chargesum+=chrg
+                x,y,z = xyz[i]
+                #   ind  atype molnumb chrg x y z # comment
+                f.write("%10d %5d %5d %10.5f %12.6f %12.6f %12.6f # %s\n" % (i+1, molnumb, atype, chrg, x,y,z, vdwt))
+            self.pprint("The total charge of the system is: %12.8f" % chargesum)
         # write bonds
         if len(self.rics["bnd"]) != 0: f.write("\nBonds\n\n")
         for i in range(len(self.rics["bnd"])):
@@ -578,6 +609,7 @@ class ff2lammps(base):
         """
         NOTE: add read data ... fix header with periodic info
         """
+        assert self.reax != True, "Not to be used with ReaxFF"
         if self.mpi_rank > 0: return
         self.input_filename = filename
         f = open(filename, "w")
