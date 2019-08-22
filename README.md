@@ -78,7 +78,7 @@ make yes-MC
 make yes-USER-MOFFF
 make yes-USER-MISC
 make yes-MOLECULE
-make yes-H5MD
+make yes-USER-H5MD
 make yes-USER-REAXC
 
 #  --- by default we install the colvars package. very useful!
