@@ -10,6 +10,7 @@ Created on Sat Apr 22 17:43:56 2017
    in the style of pydlpoly ... 
 
 """
+from __future__ import print_function
 import numpy as np
 import string
 import os
@@ -370,18 +371,18 @@ class pylmps(mpiobject):
         folder = os.listdir(path)
         infile = False
         if folder.count(self.name) == 1: 
-            print 'use existing in file'
+            print('use existing in file')
             infile = True
         if not mfpx == None:
             mfpx = self.name + ".mfpx"
             self.mol.read(mfpx)
-            print 'use mfpx'
+            print('use mfpx')
         elif folder.count(self.name+'.mfpx') == 1:
             self.mol.read(self.name+'.mfpx')
-            print 'use mfpx file'
+            print('use mfpx file')
         elif folder.count(self.name+'.xyz') == 1:
             self.mol.read(self.name+'.xyz','xyz')
-            print 'use xyz file'
+            print('use xyz file')
         if infile == False:
             objekt = mol2lammps.mol2lammps(self.mol)
             objekt.write_data(self.name)
@@ -415,9 +416,9 @@ class pylmps(mpiobject):
                 order += 'O '
                 self.reaxff_plmps_elems.append('O')
             else:
-                print masses
-                print 'FF is not defined for rounded mass = ', mass
-                print 'normal order of H C O is defined'
+                print(masses)
+                print('FF is not defined for rounded mass = ', mass)
+                print('normal order of H C O is defined')
                 order = ' H C O '
                 self.reaxff_plmps_elems = ['H','C','O']
                 break
