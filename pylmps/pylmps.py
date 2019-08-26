@@ -896,8 +896,8 @@ class pylmps(mpiobject):
     LATMIN = LATMIN_sd
 
     def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
-            relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
-            colvar = None, mttk_volconstraint='yes', log = True, dump=True, append=False):
+            relax=(0.1,1.), traj=[], rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
+            colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False):
         """Defines the MD settings
         
         MD_init has to be called before a MD simulation can be performed, the ensemble along with the
@@ -967,10 +967,7 @@ class pylmps(mpiobject):
             self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(plmps_elems)))
             self.md_dumps.append(stage+"_dump")
         # self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
-        if traj is not None:
-            # NOTE this is a hack .. need to make cells orhto for bcond=1&2 automatically. add triclinic cells to pdlp
-            assert self.mol.bcond < 3
-            #self.lmps.command("change_box all ortho")
+        if self.pdlp is not None:
             # ok, we will also write to the pdlp file
             if append:
                 raise IOError("TBI")
@@ -981,7 +978,7 @@ class pylmps(mpiobject):
                 # now close the hdf5 file becasue it will be written within lammps
                 self.pdlp.close()
                 # now create the dump
-                traj_string = string.join(traj)
+                traj_string = string.join(traj + ["restart"])
                 print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
                 self.lmps.command("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
                 self.md_dumps.append(stage+"_pdlp")
