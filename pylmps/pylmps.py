@@ -1003,7 +1003,7 @@ class pylmps(mpiobject):
         elif ensemble == "npt":
             # this is NPT so add output of pressure and cell
             thermo_style += cellpar
-            thermo_sytle += pressure
+            thermo_style += pressure
             if thermo == 'hoover':
                 self.lmps.command('fix %s all npt temp %12.6f %12.6f %i %s %12.6f %12.6f %i' 
                         % (stage,T1,T2,conv_relax*relax[0],bcond, p1, p2, conv_relax*relax[1]))
