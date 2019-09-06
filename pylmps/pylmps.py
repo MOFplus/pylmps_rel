@@ -898,7 +898,7 @@ class pylmps(mpiobject):
 
     def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=[], rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
-            colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False):
+            colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False, dump_thermo=True):
         """Defines the MD settings
         
         MD_init has to be called before a MD simulation can be performed, the ensemble along with the
@@ -924,6 +924,7 @@ class pylmps(mpiobject):
             log (bool, optional): Defaults to True. defines if log file is written
             dump (bool, optional): Defaults to True: defines if an ASCII dump is written
             append (bool, optional): Defaults to False: if True data is appended to the exisiting stage (TBI)
+            dump_thermo (bool, optional): defaults to True: if True dump the thermo data written to the log file also to the pdlp dump
         
         Returns:
             None: None
@@ -967,22 +968,6 @@ class pylmps(mpiobject):
                 plmps_elems = self.ff2lmp.plmps_elems
             self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(plmps_elems)))
             self.md_dumps.append(stage+"_dump")
-        # self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
-        if self.pdlp is not None:
-            # ok, we will also write to the pdlp file
-            if append:
-                raise IOError("TBI")
-            else:
-                # stage is new and we need to define it and set it up
-                self.pdlp.add_stage(stage)
-                self.pdlp.prepare_stage(stage, traj, tnstep, tstep=timestep/1000.0)
-                # now close the hdf5 file becasue it will be written within lammps
-                self.pdlp.close()
-                # now create the dump
-                traj_string = string.join(traj + ["restart"])
-                print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
-                self.lmps.command("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
-                self.md_dumps.append(stage+"_pdlp")
         # do velocity startup
         if startup:
             self.lmps.command('velocity all create %12.6f 42 rot yes dist gaussian' % (T1))
@@ -1034,8 +1019,31 @@ class pylmps(mpiobject):
             self.lmps.command("fix col all colvars %s" %  colvar)
             self.md_fixes.append("col")
         # now define what scalar values should be written to the log file
-        thermo_style_string = "thermo_style custom step " + string.join(thermo_style) + " spcpu"
-        self.lmps.command(thermo_style_string)  
+        thermo_style += ["spcpu"]
+        thermo_style_string = "thermo_style custom step " + string.join(thermo_style)
+        self.lmps.command(thermo_style_string)
+        # now the thermo_style is defined and the length is known so we can setup the pdlp dump  
+        if self.pdlp is not None:
+            # ok, we will also write to the pdlp file
+            if append:
+                raise IOError("TBI")
+            else:
+                # stage is new and we need to define it and set it up
+                self.pdlp.add_stage(stage)
+                if dump_thermo:
+                    thermo_values = ["step"] + thermo_style
+                else:
+                    thermo_values = []
+                self.pdlp.prepare_stage(stage, traj, tnstep, tstep=timestep/1000.0, thermo_values=thermo_values)
+                # now close the hdf5 file becasue it will be written within lammps
+                self.pdlp.close()
+                # now create the dump
+                traj_string = string.join(traj + ["restart"])
+                if dump_thermo:
+                    traj_string += " thermo"
+                print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.lmps.command("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.md_dumps.append(stage+"_pdlp")
         return
 
     def MD_run(self, nsteps, printout=100):
