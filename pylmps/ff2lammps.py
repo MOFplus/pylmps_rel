@@ -41,7 +41,7 @@ class ff2lammps(base):
         :Parameters:
         
             - mol: mol object with ff addon and params assigned
-            - setup_FF [bool]: defaults to True, skip Ff setup when False
+            - setup_FF [bool]: defaults to True, skip FF setup when False
             - reax [bool]: defaults to False: if True then ReaxFF is used
 
         In case of ReaxFF no ff addon is present and no bonds/angles/dihedrals/oops are written
@@ -59,9 +59,11 @@ class ff2lammps(base):
         self.ricnames = ["bnd", "ang", "dih", "oop", "cha", "vdw"]
         self.nric = {}
         self.par_types = {}
+        self.rics = {}
         for r in self.ricnames:
             self.nric[r] = 0
             self.par_types[r] = {}
+            self.rics[r] = {}
         self.reax=False
         if reax:
             self.reax = True
@@ -70,6 +72,7 @@ class ff2lammps(base):
             self.plmps_mass = {}
             for at in self.plmps_atypes:
                 self.plmps_mass[at] = elements.mass[at]
+            self.timer.stop()
             return
         self.timer.start("setup pair pots")
         self._mol.ff.setup_pair_potentials()
@@ -82,7 +85,6 @@ class ff2lammps(base):
         # make lists of paramtypes and conenct to mol.ff obejcts as shortcuts
         self.par = {}
         self.parind = {}
-        self.rics = {}
         self.npar = {}
         for r in self.ricnames:
             self.par[r]       = self._mol.ff.par[r]
@@ -310,7 +312,8 @@ class ff2lammps(base):
                 x,y,z = xyz[i]
                 # for reaxff chrg = 0.0 becasue it is set by Qeq
                 #   ind  atype chrg x y z # comment
-                f.write("%10d %5d %10.5f %12.6f %12.6f %12.6f # %s\n" % (i+1, atype, chrg, x,y,z, vdwt))
+                chrg = 0.0
+                f.write("%10d %5d %10.5f %12.6f %12.6f %12.6f\n" % (i+1, atype, chrg, x,y,z))
         else:
             chargesum = 0.0
             for i in range(self._mol.get_natoms()):
