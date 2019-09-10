@@ -959,7 +959,7 @@ class pylmps(mpiobject):
             p1,p2 = p,p
         # generate regular dump (ASCII)
         if dump is True:
-            self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
+            self.lmps.command('dump %s all custom %i %s.dump id type element x y z' % (stage+"_dump", tnstep, stage))
             if self.use_uff:
                 plmps_elems = self.uff_plmps_elems
             elif self.use_reaxff:
