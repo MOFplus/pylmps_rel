@@ -398,7 +398,6 @@ class pylmps(mpiobject):
         self.lmps.command('fix qeq all qeq/reax 1 0.0 10.0 1e-6 reax/c')   
         self.lmps.command('neighbor 2 bin')       
         self.lmps.command('neigh_modify every 10 delay 0 check no')              
-        self.lmps.command('timestep %.02f' % self.control["reaxff_timestep"]) 
         return
         
 
@@ -698,6 +697,7 @@ class pylmps(mpiobject):
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         self.report_energies()
+        self.lmps.command("reset_timestep 0")
         return
 
     MIN = MIN_cg
@@ -894,7 +894,10 @@ class pylmps(mpiobject):
             self.lmps.command('log %s/%s.log' % (self.rundir,stage))
         # first specify the timestep in femtoseconds
         # the relax values are multiples of the timestep
-        self.lmps.command('timestep %12.6f' % timestep)
+        if self.use_reaxff:
+            self.lmps.command('timestep %.02f' % self.control["reaxff_timestep"]) 
+        else:
+            self.lmps.command('timestep %12.6f' % timestep)
         # manage output, this is the setup for the output written to screen and log file
         # define a string variable holding the name of the stage to be printed before each output line, like
         # in pydlpoly
