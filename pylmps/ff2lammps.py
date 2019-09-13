@@ -55,6 +55,23 @@ class ff2lammps(base):
         # generate the force field
         if setup_FF != True:
             return
+        # general settings                
+        self._settings = {}
+        # set defaults
+        self._settings["cutoff"] = 12.0
+        self._settings["cutoff_coul"] = None
+        self._settings["parformat"] = "%15.8g"
+        self._settings["vdw_a"] = 1.84e5
+        self._settings["vdw_b"] = 12.0
+        self._settings["vdw_c"] = 2.25
+        self._settings["vdw_dampfact"] = 0.25
+        self._settings["vdw_smooth"] = 0.9
+        self._settings["coul_smooth"] = 0.9
+        self._settings["use_angle_cosine_buck6d"] = True
+        self._settings["kspace_method"] = "ewald"
+        self._settings["kspace_prec"] = 1.0e-6
+        self._settings["use_improper_umbrella_harmonic"] = False # default is to use improper_inversion_harmonic
+        self._settings["origin"] = "zero"
         # init some basic stuff always needed
         self.ricnames = ["bnd", "ang", "dih", "oop", "cha", "vdw"]
         self.nric = {}
@@ -153,23 +170,6 @@ class ff2lammps(base):
 #                #pair_data = copy.copy(vdwpairdata[1])
 #                pair_data.append(1.0/sigma_ij)
 #                self.plmps_pair_data[(i+1,j+1)] = pair_data
-        # general settings                
-        self._settings = {}
-        # set defaults
-        self._settings["cutoff"] = 12.0
-        self._settings["cutoff_coul"] = None
-        self._settings["parformat"] = "%15.8g"
-        self._settings["vdw_a"] = 1.84e5
-        self._settings["vdw_b"] = 12.0
-        self._settings["vdw_c"] = 2.25
-        self._settings["vdw_dampfact"] = 0.25
-        self._settings["vdw_smooth"] = 0.9
-        self._settings["coul_smooth"] = 0.9
-        self._settings["use_angle_cosine_buck6d"] = True
-        self._settings["kspace_method"] = "ewald"
-        self._settings["kspace_prec"] = 1.0e-6
-        self._settings["use_improper_umbrella_harmonic"] = False # default is to use improper_inversion_harmonic
-        self._settings["origin"] = "zero"
         # add settings from ff addon
         for k,v in list(self._mol.ff.settings.items()):
             self._settings[k]=v
