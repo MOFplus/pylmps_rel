@@ -169,6 +169,7 @@ class ff2lammps(base):
         self._settings["kspace_method"] = "ewald"
         self._settings["kspace_prec"] = 1.0e-6
         self._settings["use_improper_umbrella_harmonic"] = False # default is to use improper_inversion_harmonic
+        self._settings["origin"] = "zero"
         # add settings from ff addon
         for k,v in list(self._mol.ff.settings.items()):
             self._settings[k]=v
@@ -279,14 +280,22 @@ class ff2lammps(base):
         elif self._mol.bcond<2:
             # orthorombic/cubic bcondq
             cell = self._mol.get_cell()
-            cmin = np.zeros([3])
-            cmax = cell.diagonal()
+            if self._settings["origin"] == "zero":
+                cmax = cell.diagonal()
+                cmin = np.zeros([3])
+            else:
+                cmax = cell.diagonal()*0.5
+                cmin = -cmax
             tilts = (0.0,0.0,0.0)
         else:
             # triclinic bcond
             cell = self._mol.get_cell()
-            cmin = np.zeros([3])
-            cmax = cell.diagonal()
+            if self._settings["origin"] == "zero":
+                cmin = np.zeros([3])
+                cmax = cell.diagonal()
+            else:
+                cmax = cell.diagonal()*0.5
+                cmin = -cmax
             tilts = (cell[1,0], cell[2,0], cell[2,1])
         if self._mol.bcond >= 0:
             header += '%12.6f %12.6f  xlo xhi\n' % (cmin[0], cmax[0])

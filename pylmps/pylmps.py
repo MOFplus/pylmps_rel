@@ -70,6 +70,7 @@ class pylmps(mpiobject):
         self.control["kspace_gewald"] = 0.0
         self.control["cutoff"] = 12.0
         self.control["cutoff_coul"] = None
+        self.control["origin"] = "zero"        # location of origin in the box: either "zero" or "center"
         # reax defaults
         self.control["reaxff_timestep"] = 0.1  # ReaxFF timestep is smaller than usual
         self.control["reaxff_filepath"] = "."
@@ -126,7 +127,8 @@ class pylmps(mpiobject):
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
-            logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, reaxff="cho", **kwargs):
+            logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, reaxff="cho",
+            **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
         
             any keyword arguments known to control will be set to control
@@ -153,6 +155,9 @@ class pylmps(mpiobject):
 #        cmdargs = ['-log', logfile]
 #        if screen == False: cmdargs+=['-screen', 'none']
 #        self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
+
+        # assert settings
+        assert self.control["origin"] in ["zero", "center"]
 
         # depending on what type of input is given a setup will be done
         # the default is to load an mfpx file and assign from MOF+ (using force field MOF-FF)
@@ -219,6 +224,8 @@ class pylmps(mpiobject):
         elif self.use_reaxff:
             # incase of reaxff we need to converter only for the data file
             self.ff2lmp = ff2lammps.ff2lammps(self.mol, reax=True)
+        # now converter is in place .. transfer settings
+        self.ff2lmp.setting("origin", self.control["origin"])
         if local:
             self.rundir=self.start_dir
         else:
