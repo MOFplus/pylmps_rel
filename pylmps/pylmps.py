@@ -56,10 +56,10 @@ class pylmps(mpiobject):
          "bond"    : "ebond",
          "angle"   : "eangle",
          "oop"     : "eimp",
-         "torsions": "edihed",
+         "torsion ": "edihed",
          "epot"    : "pe",
          }
-        self.enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsions"]
+        self.enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsion"]
         for e in self.evars:
             self.lmps.command("variable %s equal %s" % (e, self.evars[e]))
         # control dictionary .. define all defaults here.
@@ -175,6 +175,11 @@ class pylmps(mpiobject):
             self.pprint("USING ReaxFF SETUP!!")
             self.use_reaxff = True
             self.reaxff = reaxff
+            # fix energy printout
+            for en in ("vdW", "CoulPBC", "bond", "angle", "oop", "torsion"):
+                self.enames.remove(en)
+            self.enames = ["reax_bond"]+self.enames
+            self.evars["reax_bond"] = "evdwl"
         # set the pdlp filename
         if pdlp is None:
             self.pdlpname = self.start_dir + self.name + ".pdlp"
