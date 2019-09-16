@@ -25,6 +25,8 @@ from molsys.util import pdlpio2
 
 from molsys.util.timing import timer, Timer
 
+import molsys.util.elems as elems
+
 try:
     from lammps import lammps
 except ImportError:
@@ -992,7 +994,15 @@ class pylmps(mpiobject):
         # add the fix to produce the bond file in cae this is a reax calcualtion
         if self.use_reaxff:
             if self.control["reaxff_bondfile"] is not None:
-                self.lmps.command("fix bnd all reax/c/bonds %d %s" % (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"]))
+                # compute an upper estimate of the maximum number of bonds in the system
+                self.nbondsmax = 0
+                for e in self.get_elements():
+                    self.nbondsmax += elems.maxbond[e]
+                self.nbondsmax /= 2
+                self.pprint("Writing ReaxFF bondtaba and bondorder to pdlp file (nbondsmax = %d)" % self.nbondsmax)
+                self.lmps.command("fix reaxc_bnd all reax/c/bonds %d %s pdlp %d" % \
+                                      (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"], self.nbondsmax))
+                self.md_fixes.append("reaxc_bnd")
         # now define what scalar values should be written to the log file
         thermo_style += ["spcpu"]
         thermo_style_string = "thermo_style custom step " + string.join(thermo_style)
@@ -1010,6 +1020,10 @@ class pylmps(mpiobject):
                 else:
                     thermo_values = []
                 self.pdlp.prepare_stage(stage, traj, tnstep, tstep=timestep/1000.0, thermo_values=thermo_values)
+                if self.use_reaxff:
+                    if self.control["reaxff_bondfile"] is not None:
+                        # add the datasets for bondtab and bondorder to the current stage
+                        self.pdlp.add_bondtab(stage, self.nbondsmax)
                 # now close the hdf5 file becasue it will be written within lammps
                 self.pdlp.close()
                 # now create the dump
@@ -1017,7 +1031,7 @@ class pylmps(mpiobject):
                 if dump_thermo:
                     traj_string += " thermo"
                 print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
-                self.lmps.command("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.lmps.command("dump %s all pdlp %i %s stage %s %s  bond" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
                 self.md_dumps.append(stage+"_pdlp")
         return
 
