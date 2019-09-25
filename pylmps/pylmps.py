@@ -58,7 +58,7 @@ class pylmps(mpiobject):
          "bond"    : "ebond",
          "angle"   : "eangle",
          "oop"     : "eimp",
-         "torsion ": "edihed",
+         "torsion": "edihed",
          "epot"    : "pe",
          }
         self.enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsion"]
