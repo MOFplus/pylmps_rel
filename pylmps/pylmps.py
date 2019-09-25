@@ -711,7 +711,11 @@ class pylmps(mpiobject):
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         self.report_energies()
-        self.lmps.command("reset_timestep 0")
+        # this command used here wihtout reaxff setup results in crashing LATMIN
+        # the error is: 
+        # ERROR: Energy was not tallied on needed timestep (../compute_pe.cpp:76)
+        # Last command: run 1 pre no post no
+        if self.use_reaxff is True: self.lmps.command("reset_timestep 0") 
         return
 
     MIN = MIN_cg
