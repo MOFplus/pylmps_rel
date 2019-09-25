@@ -25,6 +25,8 @@ from molsys.util import pdlpio2
 
 from molsys.util.timing import timer, Timer
 
+import molsys.util.elems as elems
+
 try:
     from lammps import lammps
 except ImportError:
@@ -56,10 +58,10 @@ class pylmps(mpiobject):
          "bond"    : "ebond",
          "angle"   : "eangle",
          "oop"     : "eimp",
-         "torsions": "edihed",
+         "torsion ": "edihed",
          "epot"    : "pe",
          }
-        self.enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsions"]
+        self.enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsion"]
         for e in self.evars:
             self.lmps.command("variable %s equal %s" % (e, self.evars[e]))
         # control dictionary .. define all defaults here.
@@ -70,6 +72,14 @@ class pylmps(mpiobject):
         self.control["kspace_gewald"] = 0.0
         self.control["cutoff"] = 12.0
         self.control["cutoff_coul"] = None
+        self.control["origin"] = "zero"        # location of origin in the box: either "zero" or "center"
+        # reax defaults
+        self.control["reaxff_timestep"] = 0.1  # ReaxFF timestep is smaller than usual
+        self.control["reaxff_filepath"] = "."
+        if os.environ.has_key("REAXFF_FILES"):
+            self.control["reaxff_filepath"] = os.environ["REAXFF_FILES"]
+        self.control["reaxff_bondfile"] = self.name + ".bonds"
+        self.control["reaxff_bondfreq"] = 200
         # defaults
         self.is_setup = False # will be set to True in setup -> to warn if certain functions are used after setup
         self.pdlp = None
@@ -119,7 +129,8 @@ class pylmps(mpiobject):
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
-            logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, **kwargs):
+            logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, reaxff="cho",
+            **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
         
             any keyword arguments known to control will be set to control
@@ -135,7 +146,8 @@ class pylmps(mpiobject):
                 logfile (str, optional): Defaults to 'none'. logfile
                 bcond (int, optional): Defaults to 3. Boundary Condition - 1: cubic, 2: orthorombic, 3: triclinic
                 uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
-                use_pdlp (bool, optionl): defaults to False, if True use dump_pdlp (must be compiled) 
+                use_pdlp (bool, optionl): defaults to False, if True use dump_pdlp (must be compiled)
+                reaxff (str, optional): defaults to "cho". name of the reaxff force field file (ffiled.reax.<name>) to be used if FF=="ReaxFF" 
         """
         self.timer.start("setup")
         # put all known kwargs into self.control
@@ -145,6 +157,9 @@ class pylmps(mpiobject):
 #        cmdargs = ['-log', logfile]
 #        if screen == False: cmdargs+=['-screen', 'none']
 #        self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
+
+        # assert settings
+        assert self.control["origin"] in ["zero", "center"]
 
         # depending on what type of input is given a setup will be done
         # the default is to load an mfpx file and assign from MOF+ (using force field MOF-FF)
@@ -159,8 +174,14 @@ class pylmps(mpiobject):
             self.pprint("USING UFF SETUP!! EXPERIMENTAL!!")
             self.use_uff = True
         if ff == "ReaxFF":
-            self.pprint("USING ReaxFF SETUP!! EXPERIMENTAL!!")
+            self.pprint("USING ReaxFF SETUP!!")
             self.use_reaxff = True
+            self.reaxff = reaxff
+            # fix energy printout
+            for en in ("vdW", "CoulPBC", "bond", "angle", "oop", "torsion"):
+                self.enames.remove(en)
+            self.enames = ["reax_bond"]+self.enames
+            self.evars["reax_bond"] = "evdwl"
         # set the pdlp filename
         if pdlp is None:
             self.pdlpname = self.start_dir + self.name + ".pdlp"
@@ -169,8 +190,6 @@ class pylmps(mpiobject):
         # get the mol instance either directly or from file or as an argument
         if mol != None:
             self.mol = mol
-        elif self.use_reaxff == True:
-            self.mol = molsys.mol()
         else:
             if restart is not None:
                 # The mol object should be read from the pdlp file
@@ -209,6 +228,11 @@ class pylmps(mpiobject):
                 self.ff2lmp.setting("cutoff", self.control["cutoff"])
             if self.control['cutoff_coul'] is not None:
                 self.ff2lmp.setting('cutoff_coul', self.control['cutoff_coul'])
+        elif self.use_reaxff:
+            # incase of reaxff we need to converter only for the data file
+            self.ff2lmp = ff2lammps.ff2lammps(self.mol, reax=True)
+        # now converter is in place .. transfer settings
+        self.ff2lmp.setting("origin", self.control["origin"])
         if local:
             self.rundir=self.start_dir
         else:
@@ -233,7 +257,13 @@ class pylmps(mpiobject):
         if self.use_uff:
             self.setup_uff(uff)
         elif self.use_reaxff:
-            self.setup_reaxff(mfpx = mfpx)
+            self.timer.start("write data")
+            self.ff2lmp.write_data(filename=self.data_file)
+            self.timer.stop()
+            self.timer.start("setup reaxff")
+            # in this subroutine lamps commands are issued to read the data file and strat up (instead of reading a lammps input file)
+            self.setup_reaxff()
+            self.timer.stop()
         else:
             # before writing output we can adjust the settings in ff2lmp
             # TBI
@@ -243,8 +273,6 @@ class pylmps(mpiobject):
             self.timer.start("write input")
             self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"])
             self.timer.stop()
-        # now in and data exist and we can start up    
-        if not self.use_reaxff ==True:
             self.timer.start("lammps read input")
             self.lmps.file(self.inp_file)
             self.timer.stop()
@@ -359,91 +387,32 @@ class pylmps(mpiobject):
     
         return
 
-    def setup_reaxff(self, dt = .1, Temperature = 300, Damping = 100, mfpx = None, periodic = True):
-        import mol2lammps
+    def setup_reaxff(self):
+        """set up the reax calculation (data file exists)        
+        """
         self.lmps.command('units real')
         self.lmps.command('atom_style charge')
         self.lmps.command('atom_modify map hash')
-        if periodic == True:
+        if self.mol.bcond > 0:
             self.lmps.command('boundary p p p')
-        #create input file from xyz coordinates
-        path = os.getcwd()
-        folder = os.listdir(path)
-        infile = False
-        if folder.count(self.name) == 1: 
-            print('use existing in file')
-            infile = True
-        if not mfpx == None:
-            mfpx = self.name + ".mfpx"
-            self.mol.read(mfpx)
-            print('use mfpx')
-        elif folder.count(self.name+'.mfpx') == 1:
-            self.mol.read(self.name+'.mfpx')
-            print('use mfpx file')
-        elif folder.count(self.name+'.xyz') == 1:
-            self.mol.read(self.name+'.xyz','xyz')
-            print('use xyz file')
-        if infile == False:
-            objekt = mol2lammps.mol2lammps(self.mol)
-            objekt.write_data(self.name)
-        self.lmps.command('read_data ' +self.name)           #equal
+        else:
+            self.lmps.command('boundary f f f')
+        self.lmps.command('read_data ' + self.data_file)  
         # . init force field
-        ff = 'pair_style reax/c NULL'                             #lmps_control
+        ff = 'pair_style reax/c NULL'
+        # TBI add possibility to modify mincap and safezone keaywords here
         #if Memory: ff += ' mincap %d' %Memory         
         #if Safezone: ff += ' safezone %.02f' %Safezone
         self.lmps.command(ff)
-        # flexibility for elements: h, c, o
-        f = open(self.name,'r')
-        line = f.readline()
-        while len(line)<5 or line.split()[0] != 'Masses':
-            line = f.readline()
-        masses = []
-        f.readline()
-        line = f.readline()
-        while len(line)> 3:
-            masses.append(round(float(line.split()[1])))
-            line = f.readline()
-        order = ''
-        self.reaxff_plmps_elems = []
-        for mass in masses:
-            if mass == 1.0: 
-                order += 'H '
-                self.reaxff_plmps_elems.append('H')
-            elif mass == 12.0: 
-                order += 'C '
-                self.reaxff_plmps_elems.append('C')
-            elif mass == 16.0: 
-                order += 'O '
-                self.reaxff_plmps_elems.append('O')
-            else:
-                print(masses)
-                print('FF is not defined for rounded mass = ', mass)
-                print('normal order of H C O is defined')
-                order = ' H C O '
-                self.reaxff_plmps_elems = ['H','C','O']
-                break
-        self.lmps.command('pair_coeff * * ffield.reax.cho '+order)
-        # . setup parameters
-        self.dt = dt
-        self.lmps.command('fix qeq all qeq/reax 1 0.0 10.0 1e-6 reax/c')       #equal (nur bezeichnung qeq anders)
-        self.lmps.command('neighbor 2 bin')        #equal
-        self.lmps.command('neigh_modify every 10 delay 0 check no')                    #equal
-        #self.lmps.command('timestep %.02f' %self.dt)   #0.25 fest
-        # . setup ouput: each 1ps for default timestep of 0.1fs
-        # . velocities
-        self.T = Temperature
-        #if self.velocityflag:
-         #       self.lmps.command('velocity all create %.01f %d mom yes rot yes' %(self.T, Seed)) #velocity        all create 2000 10 mom yes rot yes
-          #      print 'set random velocities'
-        # . setup
-        tnstep = 100 
-        BondFile = 'bonds.log'
-        self.lmps.command('fix bnd all reax/c/bonds %d %s' %(tnstep, BondFile))
-        self.lmps.command('reset_timestep 0')
-        #self.lmps.command('fix 2 all nvt temp %.01f %.01f %.01f' %(self.T, self.T, Damping))   #temperatur, variabel
-        #self.lmps.command('compute ape all pe/atom')       #ape ist bezeichnung pe/atom (potential energy for each atom)
-        #wird als c_ape bei dump_keys ausgegeben      #spec.dat' and 'reac.dat' in which preoptimized geometries and their potential energies
-        # . return LAMMPS object
+        # use reaxff content to define the force field and atomtypes from the converter
+        reaxff_file = self.control["reaxff_filepath"] + "/ffield.reax." + self.reaxff
+        atypes = string.join(self.ff2lmp.plmps_atypes)
+        self.lmps.command('pair_coeff * * %s %s' % (reaxff_file, atypes))
+        # now define QEq and other things  with default settings
+        self.lmps.command('fix qeq all qeq/reax 1 0.0 10.0 1e-6 reax/c')   
+        self.lmps.command('neighbor 2 bin')       
+        self.lmps.command('neigh_modify every 10 delay 0 check no')              
+        return
         
 
     def setup_data(self,name,datafile,inputfile,mfpx=None,mol=None,local=True,logfile='none',bcond=2,kspace = True):
@@ -742,6 +711,7 @@ class pylmps(mpiobject):
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         self.report_energies()
+        self.lmps.command("reset_timestep 0")
         return
 
     MIN = MIN_cg
@@ -897,8 +867,8 @@ class pylmps(mpiobject):
     LATMIN = LATMIN_sd
 
     def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
-            relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
-            colvar = None, mttk_volconstraint='yes', log = True, dump=True, append=False):
+            relax=(0.1,1.), traj=[], rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
+            colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False, dump_thermo=True):
         """Defines the MD settings
         
         MD_init has to be called before a MD simulation can be performed, the ensemble along with the
@@ -924,6 +894,7 @@ class pylmps(mpiobject):
             log (bool, optional): Defaults to True. defines if log file is written
             dump (bool, optional): Defaults to True: defines if an ASCII dump is written
             append (bool, optional): Defaults to False: if True data is appended to the exisiting stage (TBI)
+            dump_thermo (bool, optional): defaults to True: if True dump the thermo data written to the log file also to the pdlp dump
         
         Returns:
             None: None
@@ -937,7 +908,10 @@ class pylmps(mpiobject):
             self.lmps.command('log %s/%s.log' % (self.rundir,stage))
         # first specify the timestep in femtoseconds
         # the relax values are multiples of the timestep
-        self.lmps.command('timestep %12.6f' % timestep)
+        if self.use_reaxff:
+            self.lmps.command('timestep %.02f' % self.control["reaxff_timestep"]) 
+        else:
+            self.lmps.command('timestep %12.6f' % timestep)
         # manage output, this is the setup for the output written to screen and log file
         # define a string variable holding the name of the stage to be printed before each output line, like
         # in pydlpoly
@@ -958,34 +932,15 @@ class pylmps(mpiobject):
             p1,p2 = p,p
         # generate regular dump (ASCII)
         if dump is True:
-            self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
+            self.lmps.command('dump %s all custom %i %s.dump id type element x y z' % (stage+"_dump", tnstep, stage))
             if self.use_uff:
                 plmps_elems = self.uff_plmps_elems
             elif self.use_reaxff:
-                plmps_elems = self.reaxff_plmps_elems
+                plmps_elems = self.ff2lmp.plmps_atypes
             else:
                 plmps_elems = self.ff2lmp.plmps_elems
             self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(plmps_elems)))
             self.md_dumps.append(stage+"_dump")
-        # self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
-        if traj is not None:
-            # NOTE this is a hack .. need to make cells orhto for bcond=1&2 automatically. add triclinic cells to pdlp
-            assert self.mol.bcond < 3
-            #self.lmps.command("change_box all ortho")
-            # ok, we will also write to the pdlp file
-            if append:
-                raise IOError("TBI")
-            else:
-                # stage is new and we need to define it and set it up
-                self.pdlp.add_stage(stage)
-                self.pdlp.prepare_stage(stage, traj, tnstep, tstep=timestep/1000.0)
-                # now close the hdf5 file becasue it will be written within lammps
-                self.pdlp.close()
-                # now create the dump
-                traj_string = string.join(traj)
-                print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
-                self.lmps.command("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
-                self.md_dumps.append(stage+"_pdlp")
         # do velocity startup
         if startup:
             self.lmps.command('velocity all create %12.6f 42 rot yes dist gaussian' % (T1))
@@ -1036,9 +991,48 @@ class pylmps(mpiobject):
         if colvar is not None:
             self.lmps.command("fix col all colvars %s" %  colvar)
             self.md_fixes.append("col")
+        # add the fix to produce the bond file in cae this is a reax calcualtion
+        if self.use_reaxff:
+            if self.control["reaxff_bondfile"] is not None:
+                # compute an upper estimate of the maximum number of bonds in the system
+                self.nbondsmax = 0
+                for e in self.get_elements():
+                    self.nbondsmax += elems.maxbond[e]
+                self.nbondsmax /= 2
+                self.pprint("Writing ReaxFF bondtaba and bondorder to pdlp file (nbondsmax = %d)" % self.nbondsmax)
+                self.lmps.command("fix reaxc_bnd all reax/c/bonds %d %s pdlp %d" % \
+                                      (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"], self.nbondsmax))
+                self.md_fixes.append("reaxc_bnd")
         # now define what scalar values should be written to the log file
-        thermo_style_string = "thermo_style custom step " + string.join(thermo_style) + " spcpu"
-        self.lmps.command(thermo_style_string)  
+        thermo_style += ["spcpu"]
+        thermo_style_string = "thermo_style custom step " + string.join(thermo_style)
+        self.lmps.command(thermo_style_string)
+        # now the thermo_style is defined and the length is known so we can setup the pdlp dump  
+        if self.pdlp is not None:
+            # ok, we will also write to the pdlp file
+            if append:
+                raise IOError("TBI")
+            else:
+                # stage is new and we need to define it and set it up
+                self.pdlp.add_stage(stage)
+                if dump_thermo:
+                    thermo_values = ["step"] + thermo_style
+                else:
+                    thermo_values = []
+                self.pdlp.prepare_stage(stage, traj, tnstep, tstep=timestep/1000.0, thermo_values=thermo_values)
+                if self.use_reaxff:
+                    if self.control["reaxff_bondfile"] is not None:
+                        # add the datasets for bondtab and bondorder to the current stage
+                        self.pdlp.add_bondtab(stage, self.nbondsmax)
+                # now close the hdf5 file becasue it will be written within lammps
+                self.pdlp.close()
+                # now create the dump
+                traj_string = string.join(traj + ["restart"])
+                if dump_thermo:
+                    traj_string += " thermo"
+                print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.lmps.command("dump %s all pdlp %i %s stage %s %s  bond" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.md_dumps.append(stage+"_pdlp")
         return
 
     def MD_run(self, nsteps, printout=100):

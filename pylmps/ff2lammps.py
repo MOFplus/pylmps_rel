@@ -41,7 +41,7 @@ class ff2lammps(base):
         :Parameters:
         
             - mol: mol object with ff addon and params assigned
-            - setup_FF [bool]: defaults to True, skip Ff setup when False
+            - setup_FF [bool]: defaults to True, skip FF setup when False
             - reax [bool]: defaults to False: if True then ReaxFF is used
 
         In case of ReaxFF no ff addon is present and no bonds/angles/dihedrals/oops are written
@@ -55,13 +55,32 @@ class ff2lammps(base):
         # generate the force field
         if setup_FF != True:
             return
+        # general settings                
+        self._settings = {}
+        # set defaults
+        self._settings["cutoff"] = 12.0
+        self._settings["cutoff_coul"] = None
+        self._settings["parformat"] = "%15.8g"
+        self._settings["vdw_a"] = 1.84e5
+        self._settings["vdw_b"] = 12.0
+        self._settings["vdw_c"] = 2.25
+        self._settings["vdw_dampfact"] = 0.25
+        self._settings["vdw_smooth"] = 0.9
+        self._settings["coul_smooth"] = 0.9
+        self._settings["use_angle_cosine_buck6d"] = True
+        self._settings["kspace_method"] = "ewald"
+        self._settings["kspace_prec"] = 1.0e-6
+        self._settings["use_improper_umbrella_harmonic"] = False # default is to use improper_inversion_harmonic
+        self._settings["origin"] = "zero"
         # init some basic stuff always needed
         self.ricnames = ["bnd", "ang", "dih", "oop", "cha", "vdw"]
         self.nric = {}
         self.par_types = {}
+        self.rics = {}
         for r in self.ricnames:
             self.nric[r] = 0
             self.par_types[r] = {}
+            self.rics[r] = {}
         self.reax=False
         if reax:
             self.reax = True
@@ -70,6 +89,7 @@ class ff2lammps(base):
             self.plmps_mass = {}
             for at in self.plmps_atypes:
                 self.plmps_mass[at] = elements.mass[at]
+            self.timer.stop()
             return
         self.timer.start("setup pair pots")
         self._mol.ff.setup_pair_potentials()
@@ -82,7 +102,6 @@ class ff2lammps(base):
         # make lists of paramtypes and conenct to mol.ff obejcts as shortcuts
         self.par = {}
         self.parind = {}
-        self.rics = {}
         self.npar = {}
         for r in self.ricnames:
             self.par[r]       = self._mol.ff.par[r]
@@ -151,22 +170,6 @@ class ff2lammps(base):
 #                #pair_data = copy.copy(vdwpairdata[1])
 #                pair_data.append(1.0/sigma_ij)
 #                self.plmps_pair_data[(i+1,j+1)] = pair_data
-        # general settings                
-        self._settings = {}
-        # set defaults
-        self._settings["cutoff"] = 12.0
-        self._settings["cutoff_coul"] = None
-        self._settings["parformat"] = "%15.8g"
-        self._settings["vdw_a"] = 1.84e5
-        self._settings["vdw_b"] = 12.0
-        self._settings["vdw_c"] = 2.25
-        self._settings["vdw_dampfact"] = 0.25
-        self._settings["vdw_smooth"] = 0.9
-        self._settings["coul_smooth"] = 0.9
-        self._settings["use_angle_cosine_buck6d"] = True
-        self._settings["kspace_method"] = "ewald"
-        self._settings["kspace_prec"] = 1.0e-6
-        self._settings["use_improper_umbrella_harmonic"] = False # default is to use improper_inversion_harmonic
         # add settings from ff addon
         for k,v in list(self._mol.ff.settings.items()):
             self._settings[k]=v
@@ -277,14 +280,22 @@ class ff2lammps(base):
         elif self._mol.bcond<2:
             # orthorombic/cubic bcondq
             cell = self._mol.get_cell()
-            cmin = np.zeros([3])
-            cmax = cell.diagonal()
+            if self._settings["origin"] == "zero":
+                cmax = cell.diagonal()
+                cmin = np.zeros([3])
+            else:
+                cmax = cell.diagonal()*0.5
+                cmin = -cmax
             tilts = (0.0,0.0,0.0)
         else:
             # triclinic bcond
             cell = self._mol.get_cell()
-            cmin = np.zeros([3])
-            cmax = cell.diagonal()
+            if self._settings["origin"] == "zero":
+                cmin = np.zeros([3])
+                cmax = cell.diagonal()
+            else:
+                cmax = cell.diagonal()*0.5
+                cmin = -cmax
             tilts = (cell[1,0], cell[2,0], cell[2,1])
         if self._mol.bcond >= 0:
             header += '%12.6f %12.6f  xlo xhi\n' % (cmin[0], cmax[0])
@@ -310,7 +321,8 @@ class ff2lammps(base):
                 x,y,z = xyz[i]
                 # for reaxff chrg = 0.0 becasue it is set by Qeq
                 #   ind  atype chrg x y z # comment
-                f.write("%10d %5d %10.5f %12.6f %12.6f %12.6f # %s\n" % (i+1, atype, chrg, x,y,z, vdwt))
+                chrg = 0.0
+                f.write("%10d %5d %10.5f %12.6f %12.6f %12.6f\n" % (i+1, atype, chrg, x,y,z))
         else:
             chargesum = 0.0
             for i in range(self._mol.get_natoms()):
