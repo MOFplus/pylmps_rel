@@ -593,7 +593,7 @@ class pylmps(mpiobject):
         #if abs(cell[0,1]) > 10e-14: raise IOError("Cell is not properly rotated")
         #if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
         #if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
-        if self.bcond >= 2:
+        if self.bcond <= 2:
             cd = cell.diagonal()
             if ((self.bcond == 1) and (numpy.var(cd) > 1e-6)): # check if that is a cubic cell, raise error if not!
                 raise ValueError('the cell to be set is not a cubic cell,diagonals: '+str(cd)) 
