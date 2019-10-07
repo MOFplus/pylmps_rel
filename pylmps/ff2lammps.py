@@ -544,6 +544,9 @@ class ff2lammps(base):
         elif pot_type == "cos4":
             v1, v2, v3, v4 = params[:4]
             pstring = "opls %12.6f %12.6f %12.6f %12.6f" % (v1, v2, v3, v4)
+        elif pot_type == "class2":
+            v1, v2, v3, v4, v5, v6 = params[:4]
+            pstring = "class2 %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f" % (v1, v2, v3, v4, v5, v6)
         elif pot_type == "bb13":
             kss, r1, r3 = params[:3]
             pstring = "class2 bb13 %12.6f %12.6f %12.6f" % (kss*mdyn2kcal, r1, r3)
@@ -715,18 +718,28 @@ class ff2lammps(base):
             dt_number = self.par_types["dih"][dt]
             for idt in dt:
                 pot_type, params = self.par["dih"][idt]
+                pstrings = []
                 if pot_type == "cos3":
                     v1, v2, v3 = params[:3]
                     pstring = "opls %12.6f %12.6f %12.6f %12.6f" % (v1, v2, v3, 0.0)
+                    f.write("dihedral_coeff %5d %s    # %s\n" % (dt_number, pstring, idt))
                 elif pot_type == "cos4":
                     v1, v2, v3, v4 = params[:4]
                     pstring = "opls %12.6f %12.6f %12.6f %12.6f" % (v1, v2, v3, v4)
+                    f.write("dihedral_coeff %5d %s    # %s\n" % (dt_number, pstring, idt))
                 elif pot_type == "bb13":
                     kss, r1, r3 = params[:3]
+                    # write all class2 stuff first
+                    f.write("dihedral_coeff %5d class2 0.0 0.0 0.0 0.0 0.0 0.0\n" % (dt_number))
+                    f.write("dihedral_coeff %5d class2 mbt 0.0 0.0 0.0 0.0\n" % (dt_number))
+                    f.write("dihedral_coeff %5d class2 ebt 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\n" % (dt_number))
+                    f.write("dihedral_coeff %5d class2 at  0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\n" % (dt_number))
+                    f.write("dihedral_coeff %5d class2 aat 0.0 0.0 0.0\n" % (dt_number))
                     pstring = "class2 bb13 %12.6f %12.6f %12.6f" % (kss*mdyn2kcal, r1, r3) 
+                    f.write("dihedral_coeff %5d %s    # %s\n" % (dt_number, pstring, idt))
                 else:
                     raise ValueError("unknown dihedral potential")
-                f.write("dihedral_coeff %5d %s    # %s\n" % (dt_number, pstring, idt))
+#                f.write("dihedral_coeff %5d %s    # %s\n" % (dt_number, pstring, idt))
         # improper/oop style
         if len(self.par_types["oop"].keys()) > 0:
             if self._settings["use_improper_umbrella_harmonic"] == True:
