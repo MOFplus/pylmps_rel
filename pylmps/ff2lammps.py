@@ -716,30 +716,49 @@ class ff2lammps(base):
  #           f.write("\ndihedral_style opls\n\n")
         for dt in self.par_types["dih"].keys():
             dt_number = self.par_types["dih"][dt]
+            # manage class2 terms if they are not set
+            # the following order applies
+            # [class2, mbt, ebt, at, aat, bb13]
+            class2 = [False, False, False, False, False, False] 
             for idt in dt:
                 pot_type, params = self.par["dih"][idt]
                 pstrings = []
                 if pot_type == "cos3":
+                    assert len(dt) == 1, "Only class2 allows combination of potentials!"
                     v1, v2, v3 = params[:3]
                     pstring = "opls %12.6f %12.6f %12.6f %12.6f" % (v1, v2, v3, 0.0)
-                    f.write("dihedral_coeff %5d %s    # %s\n" % (dt_number, pstring, idt))
                 elif pot_type == "cos4":
+                    assert len(dt) == 1, "Only class2 allows combination of potentials!"
                     v1, v2, v3, v4 = params[:4]
                     pstring = "opls %12.6f %12.6f %12.6f %12.6f" % (v1, v2, v3, v4)
-                    f.write("dihedral_coeff %5d %s    # %s\n" % (dt_number, pstring, idt))
+                elif pot_type == "class2":
+                    class2[0] == True
+                    #v for energy barrier
+                    #r for rest_value
+                    v1, r1, v2, r2, v3, r3 = params[:6]
+                    pstring = "class2 %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f" % (v1,r1,v2,r2,v3,r3)
                 elif pot_type == "bb13":
+                    class2[5] = True
                     kss, r1, r3 = params[:3]
-                    # write all class2 stuff first
-                    f.write("dihedral_coeff %5d class2 0.0 0.0 0.0 0.0 0.0 0.0\n" % (dt_number))
-                    f.write("dihedral_coeff %5d class2 mbt 0.0 0.0 0.0 0.0\n" % (dt_number))
-                    f.write("dihedral_coeff %5d class2 ebt 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\n" % (dt_number))
-                    f.write("dihedral_coeff %5d class2 at  0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\n" % (dt_number))
-                    f.write("dihedral_coeff %5d class2 aat 0.0 0.0 0.0\n" % (dt_number))
                     pstring = "class2 bb13 %12.6f %12.6f %12.6f" % (kss*mdyn2kcal, r1, r3) 
-                    f.write("dihedral_coeff %5d %s    # %s\n" % (dt_number, pstring, idt))
                 else:
                     raise ValueError("unknown dihedral potential")
-#                f.write("dihedral_coeff %5d %s    # %s\n" % (dt_number, pstring, idt))
+                 f.write("dihedral_coeff %5d %s    # %s\n" % (dt_number, pstring, idt))
+            # check if we have a class2 potential
+            if True in class2:
+                # we have a class2 potential, so we have to fill up the missing pots with dummies
+                if class2[0] == False:
+                    f.write("dihedral_coeff %5d class2 0.0 0.0 0.0 0.0 0.0 0.0 # dummy\n" % (dt_number))
+                if class2[1] == False:
+                    f.write("dihedral_coeff %5d class2 mbt 0.0 0.0 0.0 0.0 # dummy\n" % (dt_number))
+                if class2[2] == False:
+                    f.write("dihedral_coeff %5d class2 ebt 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 # dummy\n" % (dt_number))
+                if class2[3] == False:
+                    f.write("dihedral_coeff %5d class2 at  0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 # dummy\n" % (dt_number))
+                if class2[4] == False:
+                    f.write("dihedral_coeff %5d class2 aat 0.0 0.0 0.0 # dummy\n" % (dt_number))
+                if class2[5] == False:
+                    f.write("dihedral_coeff %5d class2 bb13 0.0 0.0 0.0\n" % (dt_number))
         # improper/oop style
         if len(self.par_types["oop"].keys()) > 0:
             if self._settings["use_improper_umbrella_harmonic"] == True:
