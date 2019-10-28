@@ -12,10 +12,6 @@ pl = pylmps.pylmps("CuPW")
 ep = pylmps.expot_test(20, 30, 4.0, 1.0)
 # we need to register the objects callback as a global function
 callback = ep.callback
-# instantiate the external potential for atoms #20 and #30, refdist = 4.0 and force const = 1.0
-ep = pylmps.expot_test(20, 30, 4.0, 1.0)
-# we need to register the objects callback as a global function
-callback = ep.callback
 # now add the expot object together with the name of the global callback
 pl.add_external_potential(ep, "callback")
 pl.setup(local=True, ff="file")
