@@ -3,3 +3,8 @@
 doc/_build/*
 *.so
 *.swp
+*.in
+*.data
+.pytest*
+*.dump
+*.pdlp

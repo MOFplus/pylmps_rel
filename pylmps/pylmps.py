@@ -11,27 +11,21 @@ Created on Sat Apr 22 17:43:56 2017
 
 """
 from __future__ import print_function
-import __builtin__
-
 import numpy as np
 import string
 import os
 from mpi4py import MPI
 
 import molsys
-import ff2lammps
-from util import rotate_cell
+from . import ff2lammps
+from .util import rotate_cell
 from molsys import mpiobject
-wcomm = MPI.COMM_WORLD
-# overload print function in parallel case
-#import __builtin__
-#def print(*args, **kwargs):
-#    if mpi_rank == 0:
-#        return __builtin__.print(*args, **kwargs)
-#    else:
-#        return
 
 from molsys.util import pdlpio2
+
+from molsys.util.timing import timer, Timer
+
+import molsys.util.elems as elems
 
 try:
     from lammps import lammps
@@ -39,39 +33,58 @@ except ImportError:
     print("ImportError: Impossible to load lammps")
 
 
-evars = {
-         "vdW"     : "evdwl",
-         "Coulomb" : "ecoul",
-         "CoulPBC" : "elong",
-         "bond"    : "ebond",
-         "angle"   : "eangle",
-         "oop"     : "eimp",
-         "torsions": "edihed",
-         "epot"    : "pe",
-         }
-enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsions"]
+
 pressure = ["pxx", "pyy", "pzz", "pxy", "pxz", "pyz"]
+bcond_map = {1:'iso', 2:'aniso', 3:'tri'}
+cellpar  = ["cella", "cellb", "cellc", "cellalpha", "cellbeta", "cellgamma"]
+
 
 class pylmps(mpiobject):
     
     def __init__(self, name, logfile = "none", screen = True, mpi_comm=None, out = None):
         super(pylmps, self).__init__(mpi_comm,out)
         self.name = name
+        # get timer
+        self.timer = Timer("pylmps")
         # start lammps
         cmdargs = ['-log', logfile]
         if screen == False: cmdargs+=['-screen', 'none']
         self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
-        for e in evars:
-            self.lmps.command("variable %s equal %s" % (e, evars[e]))
-        # TBI
+        # handle names of energy contributions
+        self.evars = {
+         "vdW"     : "evdwl",
+         "Coulomb" : "ecoul",
+         "CoulPBC" : "elong",
+         "bond"    : "ebond",
+         "angle"   : "eangle",
+         "oop"     : "eimp",
+         "torsion": "edihed",
+         "epot"    : "pe",
+         }
+        self.enames = ["vdW", "Coulomb", "CoulPBC", "bond", "angle", "oop", "torsion"]
+        for e in self.evars:
+            self.lmps.command("variable %s equal %s" % (e, self.evars[e]))
+        # control dictionary .. define all defaults here.
+        # change either by setting before setup or use a kwarg in setup
         self.control = {}
-        self.control["kspace"] = False
+        self.control["kspace"] = True
         self.control["oop_umbrella"] = False
         self.control["kspace_gewald"] = 0.0
-        #self.control["cutoff"] = 12.0
+        self.control["cutoff"] = 12.0
+        self.control["cutoff_coul"] = None
+        self.control["origin"] = "zero"        # location of origin in the box: either "zero" or "center"
+        # reax defaults
+        self.control["reaxff_timestep"] = 0.1  # ReaxFF timestep is smaller than usual
+        self.control["reaxff_filepath"] = "."
+        if os.environ.has_key("REAXFF_FILES"):
+            self.control["reaxff_filepath"] = os.environ["REAXFF_FILES"]
+        self.control["reaxff_bondfile"] = self.name + ".bonds"
+        self.control["reaxff_bondfreq"] = 200
         # defaults
+        self.is_setup = False # will be set to True in setup -> to warn if certain functions are used after setup
         self.pdlp = None
         self.md_dumps = []
+        self.external_pot          = []
         # datafuncs
         self.data_funcs = {\
             "xyz"   : self.get_xyz,\
@@ -81,27 +94,72 @@ class pylmps(mpiobject):
         }
         return
 
+    def add_ename(self, ename, evar):
+        if ename not in self.evars:
+            self.evars[ename] = evar
+            self.enames.append(ename)
+            self.command("variable %s equal %s" % (ename, evar)) 
+        return
+
+    def add_external_potential(self, expot, callback=None):
+        """Add an external Potential
+
+        This potential will be added as a python/invoke fix and needs to be derived from the expot_base class
+        It will be called during optimization and MD.
+        This needs to be called BEFORE setup.
+
+        Note that the callback function must be defined in the global namespace. If no name is given then we generate it based on the 
+        name. If you run multiple instances with the same expot this could lead to problems
+        
+        Args:
+            expot (instance of expot derived class): object that computes the external potential energy and forces
+            callback (string): Defaults to None, name of the callback function in the global namespace (will be generated if None)
+        """
+        assert expot.is_expot == True
+        assert self.is_setup == False, "Must be called before setup"
+        if callback == None:
+            callback_name = "callback_expot_%s" % expot.name
+        else:
+            assert type(callback) == type("")
+            callback_name = callback
+        # this is pretty uuuugly .. but we need the name of the callback function in the global namespace to find it in the fix
+        # TBI we could check here that it does not exist
+        # globals()[callback_name] = expot.callback
+        self.external_pot.append((expot, callback_name))
+        return
+
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
-            logfile = 'none', bcond=3, kspace = False, uff="UFF4MOF"):
+            logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, reaxff="cho",
+            **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
         
-        
-            mfpx (molsys.mol, optional): Defaults to None. mol instance containing the atomistic system
-            local (bool, optional): Defaults to True. If true: run in current folder, if not: create run folder
-            mol (molsys.mol, optional): Defaults to None. mol instance containing the atomistic system
-            par (str, optional): Defaults to None. filename of the .par file containing the term infos
-            ff (str, optional): Defaults to "MOF-FF". Name of the used Forcefield when assigning from the web MOF+
-            pdlp (str, optional): defaults to None. Filename of the pdlp file 
-            restart (str, optional): stage name of the pdlp fiel to restart from
-            logfile (str, optional): Defaults to 'none'. logfile
-            bcond (int, optional): Defaults to 2. Boundary Condition
-            kspace (bool, optional): Defaults to False. if True: use SPME, else use shift damping for coulomb
-            uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
+            any keyword arguments known to control will be set to control
+
+            Args:    
+                mfpx (molsys.mol, optional): Defaults to None. mol instance containing the atomistic system
+                local (bool, optional): Defaults to True. If true: run in current folder, if not: create run folder
+                mol (molsys.mol, optional): Defaults to None. mol instance containing the atomistic system
+                par (str, optional): Defaults to None. filename of the .par file containing the term infos
+                ff (str, optional): Defaults to "MOF-FF". Name of the used Forcefield when assigning from the web MOF+
+                pdlp (str, optional): defaults to None. Filename of the pdlp file 
+                restart (str, optional): stage name of the pdlp fiel to restart from
+                logfile (str, optional): Defaults to 'none'. logfile
+                bcond (int, optional): Defaults to 3. Boundary Condition - 1: cubic, 2: orthorombic, 3: triclinic
+                uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
+                use_pdlp (bool, optionl): defaults to False, if True use dump_pdlp (must be compiled)
+                reaxff (str, optional): defaults to "cho". name of the reaxff force field file (ffiled.reax.<name>) to be used if FF=="ReaxFF" 
         """
-        self.control["kspace"] = kspace
+        self.timer.start("setup")
+        # put all known kwargs into self.control
+        for kw in kwargs:
+            if kw in self.control:
+                self.control[kw] = kwargs[kw]
 #        cmdargs = ['-log', logfile]
 #        if screen == False: cmdargs+=['-screen', 'none']
 #        self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
+
+        # assert settings
+        assert self.control["origin"] in ["zero", "center"]
 
         # depending on what type of input is given a setup will be done
         # the default is to load an mfpx file and assign from MOF+ (using force field MOF-FF)
@@ -111,9 +169,19 @@ class pylmps(mpiobject):
         self.start_dir = os.getcwd()+"/"
         # if ff is set to "UFF" assignement is done via a modified lammps_interface from peter boyds
         self.use_uff = False
+        self.use_reaxff = False
         if ff == "UFF":
             self.pprint("USING UFF SETUP!! EXPERIMENTAL!!")
             self.use_uff = True
+        if ff == "ReaxFF":
+            self.pprint("USING ReaxFF SETUP!!")
+            self.use_reaxff = True
+            self.reaxff = reaxff
+            # fix energy printout
+            for en in ("vdW", "CoulPBC", "bond", "angle", "oop", "torsion"):
+                self.enames.remove(en)
+            self.enames = ["reax_bond"]+self.enames
+            self.evars["reax_bond"] = "evdwl"
         # set the pdlp filename
         if pdlp is None:
             self.pdlpname = self.start_dir + self.name + ".pdlp"
@@ -136,7 +204,7 @@ class pylmps(mpiobject):
         # get the forcefield if this is not done already (if addon is there assume params are exisiting .. TBI a flag in ff addon to indicate that params are set up)
         self.data_file = self.name+".data"
         self.inp_file  = self.name+".in"
-        if not self.use_uff:
+        if not self.use_uff and not self.use_reaxff:
             if not "ff" in self.mol.loaded_addons:
                 self.mol.addon("ff")
                 if par or ff=="file":
@@ -147,14 +215,24 @@ class pylmps(mpiobject):
                     self.mol.ff.assign_params(ff)
             self.mol.bcond = bcond
             # now generate the converter
+            self.timer.start("init ff2lammps")
             self.ff2lmp = ff2lammps.ff2lammps(self.mol)
+            self.timer.stop()
             # adjust the settings
             if self.control["oop_umbrella"]:
                 self.pprint("using umbrella_harmonic for OOP terms")
                 self.ff2lmp.setting("use_improper_umbrella_harmonic", True)
             if self.control["kspace_gewald"] != 0.0:
                 self.ff2lmp.setting("kspace_gewald", self.control["kspace_gewald"])
-            #self.ff2lmp.setting("cutoff", self.control["cutoff"])
+            if 'cutoff' in self.control:
+                self.ff2lmp.setting("cutoff", self.control["cutoff"])
+            if self.control['cutoff_coul'] is not None:
+                self.ff2lmp.setting('cutoff_coul', self.control['cutoff_coul'])
+        elif self.use_reaxff:
+            # incase of reaxff we need to converter only for the data file
+            self.ff2lmp = ff2lammps.ff2lammps(self.mol, reax=True)
+        # now converter is in place .. transfer settings
+        self.ff2lmp.setting("origin", self.control["origin"])
         if local:
             self.rundir=self.start_dir
         else:
@@ -178,31 +256,67 @@ class pylmps(mpiobject):
         self.bcond = bcond
         if self.use_uff:
             self.setup_uff(uff)
+        elif self.use_reaxff:
+            self.timer.start("write data")
+            self.ff2lmp.write_data(filename=self.data_file)
+            self.timer.stop()
+            self.timer.start("setup reaxff")
+            # in this subroutine lamps commands are issued to read the data file and strat up (instead of reading a lammps input file)
+            self.setup_reaxff()
+            self.timer.stop()
         else:
             # before writing output we can adjust the settings in ff2lmp
             # TBI
+            self.timer.start("write data")
             self.ff2lmp.write_data(filename=self.data_file)
+            self.timer.stop()
+            self.timer.start("write input")
             self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"])
-        # now in and data exist and we can start up    
-        self.lmps.file(self.inp_file)
+            self.timer.stop()
+            self.timer.start("lammps read input")
+            self.lmps.file(self.inp_file)
+            self.timer.stop()
         os.chdir(self.start_dir)
         # connect variables for extracting
-        for e in evars:
-            self.lmps.command("variable %s equal %s" % (e, evars[e]))
+        for e in self.evars:
+            self.lmps.command("variable %s equal %s" % (e, self.evars[e]))
         for p in pressure:
             self.lmps.command("variable %s equal %s" % (p,p))
         self.lmps.command("variable vol equal vol")
         # stole this from ASE lammpslib ... needed to recompute the stress ?? should affect only the ouptut ... compute is automatically generated
         self.lmps.command('thermo_style custom pe temp pxx pyy pzz')
-        if self.mol.ff.settings["coreshell"]: self._create_grouping()
+        try:
+            if self.mol.ff.settings["coreshell"]: self._create_grouping()
+        except:
+            pass
         #self.natoms = self.lmps.get_natoms()
+        # JK experimental feature 
+        if dim4lamb is True:
+            self.command('fix lamb_fix all property/atom d_lamb ghost yes')
+            for ix in range(self.natoms):
+                self.command('set atom %d d_lamb 1.0' % (ix+1,))
+        # setup any registered external potential
+        for expot, callback_name in self.external_pot:
+            # run the expot's setup with self as an argument --> you have access to all info within the mol object
+            expot.setup(self)
+            fix_id = "expot_"+expot.name
+            self.add_ename(expot.name, "f_"+fix_id)
+            self.lmps.command("fix %s all python/invoke 1 post_force %s" % (fix_id, callback_name))
+            self.lmps.command("fix_modify %s energy yes" % fix_id)
+            self.pprint("External Potential %s is set up as fix %s" % (expot.name, fix_id))
         # compute energy of initial config
         self.calc_energy()
         self.report_energies()
         self.md_fixes = []
         # Now connect pdlpio (using pdlpio2)
-        #if self.pdlp is None:
-        #    self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self)
+        if use_pdlp and (self.pdlp is None):
+            self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self)
+        # set the flag
+        self.is_setup = True
+        # report timing
+        self.timer.write()
+        if not self.use_uff and not self.use_reaxff:
+            self.ff2lmp.report_timer()
         return
 
     def _create_grouping(self):
@@ -269,11 +383,37 @@ class pylmps(mpiobject):
         sim.merge_graphs()
         sim.write_lammps_files()
         # in the uff mode we need access to the unique atom types in terms of their elements
-        self.uff_plmps_elems = [sim.unique_atom_types[i][1]["element"] for i in sim.unique_atom_types.keys()]
+        self.uff_plmps_elems = [sim.unique_atom_types[i][1]["element"] for i in list(sim.unique_atom_types.keys())]
     
         return
 
-
+    def setup_reaxff(self):
+        """set up the reax calculation (data file exists)        
+        """
+        self.lmps.command('units real')
+        self.lmps.command('atom_style charge')
+        self.lmps.command('atom_modify map hash')
+        if self.mol.bcond > 0:
+            self.lmps.command('boundary p p p')
+        else:
+            self.lmps.command('boundary f f f')
+        self.lmps.command('read_data ' + self.data_file)  
+        # . init force field
+        ff = 'pair_style reax/c NULL'
+        # TBI add possibility to modify mincap and safezone keaywords here
+        #if Memory: ff += ' mincap %d' %Memory         
+        #if Safezone: ff += ' safezone %.02f' %Safezone
+        self.lmps.command(ff)
+        # use reaxff content to define the force field and atomtypes from the converter
+        reaxff_file = self.control["reaxff_filepath"] + "/ffield.reax." + self.reaxff
+        atypes = string.join(self.ff2lmp.plmps_atypes)
+        self.lmps.command('pair_coeff * * %s %s' % (reaxff_file, atypes))
+        # now define QEq and other things  with default settings
+        self.lmps.command('fix qeq all qeq/reax 1 0.0 10.0 1e-6 reax/c')   
+        self.lmps.command('neighbor 2 bin')       
+        self.lmps.command('neigh_modify every 10 delay 0 check no')              
+        return
+        
 
     def setup_data(self,name,datafile,inputfile,mfpx=None,mol=None,local=True,logfile='none',bcond=2,kspace = True):
         ''' setup method for use with a lammps data file that contains the system information
@@ -300,8 +440,8 @@ class pylmps(mpiobject):
         self.bcond = bcond
         self.lmps.file(self.inp_file)
         os.chdir(self.start_dir)
-        for e in evars:
-            self.lmps.command("variable %s equal %s" % (e, evars[e]))
+        for e in self.evars:
+            self.lmps.command("variable %s equal %s" % (e, self.evars[e]))
         for p in pressure:
             self.lmps.command("variable %s equal %s" % (p,p))
         self.lmps.command("variable vol equal vol")
@@ -333,7 +473,7 @@ class pylmps(mpiobject):
         return self.mol.get_elems()
 
     def get_eterm(self, name):
-        assert name in evars
+        assert name in self.evars
         return self.lmps.extract_variable(name,None,0)
 
     def set_atoms_moved(self):
@@ -359,14 +499,14 @@ class pylmps(mpiobject):
         
     def get_energy_contribs(self):
         e = {}
-        for en in enames:
+        for en in self.enames:
             e[en] = self.get_eterm(en)
         return e
         
     def report_energies(self):
         e = self.get_energy_contribs()
         etot = 0.0
-        for en in enames:
+        for en in self.enames:
             etot += e[en]
             self.pprint("%15s : %15.8f kcal/mol" % (en, e[en]))
         self.pprint("%15s : %15.8f kcal/mol" % ("TOTAL", etot))
@@ -450,16 +590,24 @@ class pylmps(mpiobject):
     def set_cell(self, cell, cell_only=False):
         # we have to check here if the box is correctly rotated in the triclinic case
         cell = rotate_cell(cell)
-        if abs(cell[0,1]) > 10e-14: raise IOError("Cell is not properly rotated")
-        if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
-        if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
-#        cd = cell.diagonal()
-        cd = tuple(ff2lammps.ff2lammps.cell2tilts(cell))
-        if cell_only:
-            self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f" % cd)
-        else:
-            self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f remap" % cd)
-#        self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f remap" % tuple(cd))
+        #if abs(cell[0,1]) > 10e-14: raise IOError("Cell is not properly rotated")
+        #if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
+        #if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
+        if self.bcond <= 2:
+            cd = cell.diagonal()
+            if ((self.bcond == 1) and (numpy.var(cd) > 1e-6)): # check if that is a cubic cell, raise error if not!
+                raise ValueError('the cell to be set is not a cubic cell,diagonals: '+str(cd)) 
+            if cell_only:
+                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f" % tuple(cd))
+            else:
+                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f remap" % tuple(cd))
+            pass # TBI
+        elif self.bcond == 3:
+            cd = tuple(ff2lammps.ff2lammps.cell2tilts(cell))
+            if cell_only:
+                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f" % cd)
+            else:
+                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f remap" % cd)
         return
 
     def get_cellforce(self):
@@ -509,17 +657,17 @@ class pylmps(mpiobject):
         energy, fxyz   = self.calc_energy_force()
         num_fxyz = np.zeros([self.natoms,3],"float64")
         xyz      = self.get_xyz()
-        for a in xrange(self.natoms):
-            for i in xrange(3):
+        for a in range(self.natoms):
+            for i in range(3):
                 keep = xyz[a,i]
                 xyz[a,i] += delta
                 self.set_xyz(xyz)
                 ep = self.calc_energy()
-                ep_contrib = np.array(self.get_energy_contribs().values())
+                ep_contrib = np.array(list(self.get_energy_contribs().values()))
                 xyz[a,i] -= 2*delta
                 self.set_xyz(xyz)
                 em = self.calc_energy()
-                em_contrib = np.array(self.get_energy_contribs().values())
+                em_contrib = np.array(list(self.get_energy_contribs().values()))
                 xyz[a,i] = keep
                 num_fxyz[a,i] = -(ep-em)/(2.0*delta)
                 # self.pprint("ep em delta_e:  %20.15f %20.15f %20.15f " % (ep, em, ep-em))
@@ -533,7 +681,7 @@ class pylmps(mpiobject):
         """
         num_latforce = np.zeros([3], "d")
         cell = self.get_cell()
-        for i in xrange(3):
+        for i in range(3):
             cell[i,i] += delta
             self.set_cell(cell)
             ep = self.calc_energy(init=True)
@@ -563,6 +711,11 @@ class pylmps(mpiobject):
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         self.report_energies()
+        # this command used here wihtout reaxff setup results in crashing LATMIN
+        # the error is: 
+        # ERROR: Energy was not tallied on needed timestep (../compute_pe.cpp:76)
+        # Last command: run 1 pre no post no
+        if self.use_reaxff is True: self.lmps.command("reset_timestep 0") 
         return
 
     MIN = MIN_cg
@@ -570,33 +723,22 @@ class pylmps(mpiobject):
     def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0,maxstep=20):
         assert method in ["cg", "sd"]
         thresh *= np.sqrt(3*self.natoms)
-        couplings = {
-                1: 'iso',
-                2: 'aniso',
-                3: 'tri'}
         stop = False
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         counter = 0
         while not stop:
-            self.lmps.command("fix latmin all box/relax %s %f vmax 0.01" % (couplings[self.bcond], p))            
+            self.lmps.command("fix latmin all box/relax %s %f vmax 0.01" % (bcond_map[self.bcond], p))            
             self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
             self.lmps.command("unfix latmin")
             self.lmps.command("min_style %s" % method)
             self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
             self.pprint("CELL :")
             self.pprint(self.get_cell())
-#            print("Stress TENSOR :")
-#            st = self.get_pressure()
-#            print(st)
-#            rms_st = np.sqrt((st*st).sum())
-#            if rms_st<st_thresh: stop=True
             cellforce = self.get_cellforce()
             self.pprint ("Current cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
             rms_cellforce = np.sqrt(np.sum(cellforce*cellforce)/9.0)
             self.pprint ("Current rms cellforce: %12.6f" % rms_cellforce)
-#            latiter += 1
-#            if latiter >= lat_maxiter: stop = True
             if rms_cellforce < threshlat: stop = True
             counter += 1
             if counter >= maxstep: stop=True
@@ -649,7 +791,69 @@ class pylmps(mpiobject):
                 self.pprint("WARNING: ENERGY SEEMS TO RISE!!!!!!")
             oldenergy = energy
             cell = self.get_cell()
-            #print ("Current cellvectors:\n%s" % str(cell))
+            cellforce = self.get_cellforce()
+            self.pprint ("Current cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
+            rms_cellforce = np.sqrt(np.sum(cellforce*cellforce)/9.0)
+            self.pprint ("Current rms cellforce: %12.6f" % rms_cellforce)
+            latiter += 1
+            if hasattr(self,'trajfile')==True:
+                from molsys.fileIO import lammpstrj
+                lammpstrj.write_raw(self.trajfile,latiter,self.get_natoms(),self.get_cell(),self.mol.get_elems(),
+                                    self.get_xyz(),np.zeros(self.get_natoms(),dtype='float'))
+            if latiter >= lat_maxiter: stop = True
+            if rms_cellforce < threshlat: stop = True
+        self.pprint ("SD minimizer done")
+        return
+    
+    def LATMIN_sd2(self,threshlat, thresh, lat_maxiter= 100, maxiter=500, fact = 2.0e-3, maxstep = 3.0):
+        """
+        Lattice and Geometry optimization (uses MIN_cg for geom opt and steepest descent in lattice parameters)
+
+        :Parameters:
+            - threshlat (float)  : Threshold in RMS force on the lattice parameters
+            - thresh (float)     : Threshold in RMS force on geom opt (passed on to :class:`pydlpoly.MIN_cg`)
+            - lat_maxiter (int)  : Number of Lattice optimization steepest descent steps
+            - fact (float)       : Steepest descent prefactor (fact x gradient = stepsize)
+            - maxstep (float)    : Maximum stepsize (step is reduced if larger then this value)
+
+        """
+        self.pprint ("\n\nLattice Minimization: using steepest descent for %d steps (threshlat=%10.5f, thresh=%10.5f)" % (lat_maxiter, threshlat, thresh))
+        self.pprint ("                      the geometry is relaxed with MIN_cg at each step for a mximum of %d steps" % maxiter)
+        self.pprint ("Initial Optimization ")
+        self.MIN_cg(thresh, maxiter=maxiter)
+        # to zero the stress tensor
+        oldenergy = self.calc_energy()
+        cell = self.get_cell()
+        self.pprint ("Initial cellvectors:\n%s" % np.array2string(cell,precision=4,suppress_small=True))
+        cellforce = self.get_cellforce()
+        self.pprint ("Initial cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
+        stop = False
+        latiter = 1
+        while not stop:
+            self.pprint ("Lattice optimization step %d" % latiter)
+            step = fact*cellforce
+            steplength = np.sqrt(np.sum(step*step))
+            self.pprint("Unconstrained step length: %10.5f Angstrom" % steplength)
+            if steplength > maxstep:
+                self.pprint("Constraining to a maximum steplength of %10.5f" % maxstep)
+                step *= maxstep/steplength
+            new_cell = cell + step
+            # cell has to be properly rotated for lammps
+            new_cell = rotate_cell(new_cell)
+            self.pprint ("New cell:\n%s" % np.array2string(new_cell,precision=4,suppress_small=True))
+            self.set_cell(new_cell)
+            self.MIN_cg(thresh, maxiter=maxiter)
+            energy = self.calc_energy()
+            #if energy > oldenergy:
+            #    self.pprint("WARNING: ENERGY SEEMS TO RISE!!!!!!")
+            #    # revert the step!
+            #    old_cell = cell - step
+            #    self.set_cell(old_cell)
+            #    self.MIN_cg(thresh,maxiter=maxiter)
+            #    fact /= 1.2
+            #    print(fact)
+            oldenergy = energy
+            cell = self.get_cell()
             cellforce = self.get_cellforce()
             self.pprint ("Current cellforce:\n%s" % np.array2string(cellforce,precision=4,suppress_small=True))
             rms_cellforce = np.sqrt(np.sum(cellforce*cellforce)/9.0)
@@ -667,8 +871,8 @@ class pylmps(mpiobject):
     LATMIN = LATMIN_sd
 
     def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
-            relax=(0.1,1.), traj=None, rnstep=100, tnstep=100,timestep = 1.0, bcond = 'iso', 
-            colvar = None, mttk_volconstraint='yes', log = True, dump=True, append=False):
+            relax=(0.1,1.), traj=[], rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
+            colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False, dump_thermo=True):
         """Defines the MD settings
         
         MD_init has to be called before a MD simulation can be performed, the ensemble along with the
@@ -688,33 +892,39 @@ class pylmps(mpiobject):
             rnstep (int, optional): Defaults to 100. restart writing frequency
             tnstep (int, optional): Defaults to 100. trajectory writing frequency
             timestep (float, optional): Defaults to 1.0. timestep in fs
-            bcond (str, optional): Defaults to 'iso'. boundary condition (check what you set in the setup!) not sure if that does anythign here
+            bcond (str, optional): Defaults to None. by default, the bcond defined in setup is used. only if overwritten here as 'iso' (1), 'aniso' (2) or 'tri' (3), this bcond is used.
             colvar (string, optional): Defaults to None. if given, the Name of the colvar input file. LAMMPS has to be compiled with colvars in order to use it
             mttk_volconstraint (str, optional): Defaults to 'yes'. if 'mttk' is used as barostat, define here whether to constraint the volume
             log (bool, optional): Defaults to True. defines if log file is written
             dump (bool, optional): Defaults to True: defines if an ASCII dump is written
             append (bool, optional): Defaults to False: if True data is appended to the exisiting stage (TBI)
+            dump_thermo (bool, optional): defaults to True: if True dump the thermo data written to the log file also to the pdlp dump
         
         Returns:
             None: None
         """
+        if bcond == None: bcond = bcond_map[self.bcond]
         assert bcond in ['iso', 'aniso', 'tri']
-        def conversion(r):
-            return r * 1000/timestep 
-        # pressure in athmospheres
+        conv_relax = 1000/timestep 
+        # pressure in atmospheres
         # if wished open a specific log file
         if log:
             self.lmps.command('log %s/%s.log' % (self.rundir,stage))
         # first specify the timestep in femtoseconds
         # the relax values are multiples of the timestep
-        self.lmps.command('timestep %12.6f' % timestep)
+        if self.use_reaxff:
+            self.lmps.command('timestep %.02f' % self.control["reaxff_timestep"]) 
+        else:
+            self.lmps.command('timestep %12.6f' % timestep)
         # manage output, this is the setup for the output written to screen and log file
         # define a string variable holding the name of the stage to be printed before each output line, like
         # in pydlpoly
         label = '%-5s' % (stage.upper()[:5])
-        self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe\
-                ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma\
-                pxx pyy pzz pxy pxz pyz')
+        # build the thermo_style list (sent to to lammps as thermos tyle commend at the end)
+        thermo_style = [self.evars[n] for n in self.enames]
+        thermo_style += [self.evars["epot"]]
+        # this is md .. add some crucial stuff
+        thermo_style += ["ke", "etotal", "temp", "press", "vol"]
         # check if pressure or temperature ramp is requrested. in this case len(T/P) == 2
         if hasattr(T,'__iter__'):
             T1,T2=T[0],T[1]
@@ -726,32 +936,15 @@ class pylmps(mpiobject):
             p1,p2 = p,p
         # generate regular dump (ASCII)
         if dump is True:
-            self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
+            self.lmps.command('dump %s all custom %i %s.dump id type element x y z' % (stage+"_dump", tnstep, stage))
             if self.use_uff:
                 plmps_elems = self.uff_plmps_elems
+            elif self.use_reaxff:
+                plmps_elems = self.ff2lmp.plmps_atypes
             else:
                 plmps_elems = self.ff2lmp.plmps_elems
             self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(plmps_elems)))
             self.md_dumps.append(stage+"_dump")
-        # self.lmps.command('dump %s all h5md %i %s.h5 position box yes' % (stage+"h5md",tnstep,stage))
-        if traj is not None:
-            # NOTE this is a hack .. need to make cells orhto for bcond=1&2 automatically. add triclinic cells to pdlp
-            assert self.mol.bcond < 3
-            self.lmps.command("change_box all ortho")
-            # ok, we will also write to the pdlp file
-            if append:
-                raise IOError, "TBI"
-            else:
-                # stage is new and we need to define it and set it up
-                self.pdlp.add_stage(stage)
-                self.pdlp.prepare_stage(stage, traj, tnstep, tstep=timestep/1000.0)
-                # now close the hdf5 file becasue it will be written within lammps
-                self.pdlp.close()
-                # now create the dump
-                traj_string = string.join(traj)
-                print("dump %s all pdlp %i %s.pdlp stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
-                self.lmps.command("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
-                self.md_dumps.append(stage+"_pdlp")
         # do velocity startup
         if startup:
             self.lmps.command('velocity all create %12.6f 42 rot yes dist gaussian' % (T1))
@@ -761,30 +954,38 @@ class pylmps(mpiobject):
             self.lmps.command('fix %s all nve' % (stage))
         elif ensemble == 'nvt':
             if thermo == 'ber':
-                self.lmps.command('fix %s all temp/berendsen %12.6f %12.6f %i'% (stage,T1,T2,conversion(relax[0])))
+                self.lmps.command('fix %s all temp/berendsen %12.6f %12.6f %i'% (stage,T1,T2,conv_relax*relax[0]))
                 self.lmps.command('fix %s_nve all nve' % stage)
                 self.md_fixes = [stage, '%s_nve' % stage]
             elif thermo == 'hoover':
-                self.lmps.command('fix %s all nvt temp %12.6f %12.6f %i' % (stage,T1,T2,conversion(relax[0])))
+                self.lmps.command('fix %s all nvt temp %12.6f %12.6f %i' % (stage,T1,T2,conv_relax*relax[0]))
                 self.md_fixes = [stage]
             else: 
                 raise NotImplementedError
         elif ensemble == "npt":
+            # this is NPT so add output of pressure and cell
+            thermo_style += cellpar
+            thermo_style += pressure
             if thermo == 'hoover':
                 self.lmps.command('fix %s all npt temp %12.6f %12.6f %i %s %12.6f %12.6f %i' 
-                        % (stage,T1,T2,conversion(relax[0]),bcond, p1, p2, conversion(relax[1])))
+                        % (stage,T1,T2,conv_relax*relax[0],bcond, p1, p2, conv_relax*relax[1]))
                 self.md_fixes = [stage]
             elif thermo == 'ber':
                 assert bcond != "tri"
-                self.lmps.command('fix %s_temp all temp/berendsen %12.6f %12.6f %i'% (stage,T1,T2,conversion(relax[0])))
-                self.lmps.command('fix %s_press all press/berendsen %s %12.6f %12.6f %i'% (stage,bcond,p1,p2,conversion(relax[1])))
+                self.lmps.command('fix %s_temp all temp/berendsen %12.6f %12.6f %i'% (stage,T1,T2,conv_relax*relax[0]))
+                self.lmps.command('fix %s_press all press/berendsen %s %12.6f %12.6f %i'% (stage,bcond,p1,p2,conv_relax*relax[1]))
                 self.lmps.command('fix %s_nve all nve' % stage)
                 self.md_fixes = ['%s_temp' % stage,'%s_press' % stage , '%s_nve' % stage]
             elif thermo == 'mttk':
-                self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f tri %12.6f %12.6f %12.6f volconstraint %s'
-                               % (stage,T1,T2,conversion(relax[0]),p1,p2,conversion(relax[1]),mttk_volconstraint))
+                if mttkbcond=='iso':
+                    self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f iso %12.6f %12.6f %12.6f volconstraint %s'
+                               % (stage,T1,T2,conv_relax*relax[0],p1,p2,conv_relax*relax[1],mttk_volconstraint))
+                else:
+                    self.lmps.command('fix %s_mttknhc all mttknhc temp %8.4f %8.4f %8.4f tri %12.6f %12.6f %12.6f volconstraint %s'
+                               % (stage,T1,T2,conv_relax*relax[0],p1,p2,conv_relax*relax[1],mttk_volconstraint))
+                
                 self.lmps.command('fix_modify %s_mttknhc energy yes'% (stage,))
-                self.lmps.command('thermo_style custom step ecoul elong ebond eangle edihed eimp pe ke etotal temp press vol cella cellb cellc cellalpha cellbeta cellgamma pxx pyy pzz pxy pxz pyz')
+                thermo_style += ["enthalpy"]
                 self.md_fixes = ['%s_mttknhc'% (stage,)]
             else:
                 raise NotImplementedError
@@ -794,6 +995,48 @@ class pylmps(mpiobject):
         if colvar is not None:
             self.lmps.command("fix col all colvars %s" %  colvar)
             self.md_fixes.append("col")
+        # add the fix to produce the bond file in cae this is a reax calcualtion
+        if self.use_reaxff:
+            if self.control["reaxff_bondfile"] is not None:
+                # compute an upper estimate of the maximum number of bonds in the system
+                self.nbondsmax = 0
+                for e in self.get_elements():
+                    self.nbondsmax += elems.maxbond[e]
+                self.nbondsmax /= 2
+                self.pprint("Writing ReaxFF bondtaba and bondorder to pdlp file (nbondsmax = %d)" % self.nbondsmax)
+                self.lmps.command("fix reaxc_bnd all reax/c/bonds %d %s pdlp %d" % \
+                                      (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"], self.nbondsmax))
+                self.md_fixes.append("reaxc_bnd")
+        # now define what scalar values should be written to the log file
+        thermo_style += ["spcpu"]
+        thermo_style_string = "thermo_style custom step " + string.join(thermo_style)
+        self.lmps.command(thermo_style_string)
+        # now the thermo_style is defined and the length is known so we can setup the pdlp dump  
+        if self.pdlp is not None:
+            # ok, we will also write to the pdlp file
+            if append:
+                raise IOError("TBI")
+            else:
+                # stage is new and we need to define it and set it up
+                self.pdlp.add_stage(stage)
+                if dump_thermo:
+                    thermo_values = ["step"] + thermo_style
+                else:
+                    thermo_values = []
+                self.pdlp.prepare_stage(stage, traj, tnstep, tstep=timestep/1000.0, thermo_values=thermo_values)
+                if self.use_reaxff:
+                    if self.control["reaxff_bondfile"] is not None:
+                        # add the datasets for bondtab and bondorder to the current stage
+                        self.pdlp.add_bondtab(stage, self.nbondsmax)
+                # now close the hdf5 file becasue it will be written within lammps
+                self.pdlp.close()
+                # now create the dump
+                traj_string = string.join(traj + ["restart"])
+                if dump_thermo:
+                    traj_string += " thermo"
+                print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.lmps.command("dump %s all pdlp %i %s stage %s %s  bond" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.md_dumps.append(stage+"_pdlp")
         return
 
     def MD_run(self, nsteps, printout=100):

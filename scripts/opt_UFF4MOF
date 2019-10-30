@@ -23,10 +23,20 @@ pl.setup(local=True, ff="UFF",uff='UFF4MOF')
 
 pl.MIN(0.1)
 
+pl.LATMIN_boxrel(0.1, 0.1)
 pl.LATMIN(0.1, 0.1)
-pl.LATMIN(0.1, 0.1)
-pl.LATMIN(0.05, 0.05)
-pl.MIN(0.01)
+#pl.LATMIN_sd2(0.01, 0.01,fact=0.005)
+#pl.LATMIN_sd2(0.005, 0.005,fact=0.005)
+#pl.LATMIN_sd2(0.05, 0.01,fact=0.001)
+#pl.LATMIN_sd2(0.005, 0.001,fact=0.001)
+#pl.LATMIN_sd2(0.005, 0.001,fact=0.001)
+#pl.LATMIN_sd2(0.005, 0.001,fact=0.001)
+#pl.LATMIN_sd2(0.005, 0.001,fact=0.001)
+#pl.LATMIN_sd2(0.005, 0.001,fact=0.001)
+#pl.LATMIN_sd2(0.005, 0.001,fact=0.001)
+#pl.LATMIN_sd2(0.005, 0.001,fact=0.001)
+#pl.LATMIN_sd2(0.005, 0.001,fact=0.001)
+pl.MIN(0.0001)
 
 pl.write(name+'_uff4mof_latopt.mfpx')
 

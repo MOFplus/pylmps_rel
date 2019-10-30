@@ -24,11 +24,10 @@ pl.setup(local=True, ff="UFF",uff='UFF')
 pl.MIN(0.1)
 
 pl.LATMIN(0.1, 0.1)
-pl.LATMIN(0.1, 0.1)
 pl.LATMIN(0.05, 0.05)
 pl.MIN(0.01)
 
-pl.write(name+'_uff4mof_latopt.mfpx')
+pl.write(name+'_uff_latopt.mfpx')
 
 
 

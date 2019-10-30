@@ -1,8 +1,8 @@
 # pylmps
 
-Pylmps is a pyhton wrapper for lammps ( i.e. for the python interface to lammps). It is made to have a similar syntax as [pydlpoly](https://github.com/MOFplus/pydlpoly).
+Pylmps is a Python wrapper for lammps ( i.e. for the python interface to lammps). It is made to have a similar syntax as [pydlpoly](https://github.com/MOFplus/pydlpoly).
 
-### Installing
+## Installing
 
 In order to install pylmps clone this repository into destination of your choosing (we always use /home/%USER/sandbox/, also the installation instructions below use this path)
 
@@ -22,24 +22,53 @@ export PATH=/home/$USER/sandbox/pylmps/scripts:$PATH
 
 Mandatory dependencies are:
 
-* [LAMMPS](https://lammps.sandia.gov/download.html)
+* [LAMMPS](https://github.com/MOFplus/lammps)
 * [molsys](https://github.com/MOFplus/molsys) 
 
-### Installing LAMMPS
+## Installing LAMMPS
 
 Lammps needs to be built as a shared library. The following list is our default way of compiling it 
 (version from 2017 or newer necessary, since the USER-MOFFF package is from 2017)
+(Note: we include ReaxFF by default ... omit if you are sure that you do not need it)
 
-Note on installing Lammps with the mttk barostat implementation of the ghent group
-* clone (this repository)[https://github.com/stevenvdb/lammps].
-* switch to the newbarostat branch before you continue with the rest of the installation via
+### Clone from github
+
+First clone the repo from github.com:MOFplus/lammps with
 ```
-git checkout newbarostat
+git clone https://github.com/MOFplus/lammps
 ```
-cd to the lammps directory and install via
+
+In case you need to use the mttk barostat as implemented by the Ghent group you need now to pull from
+Steven Vandenbrande's git repository. First cd into the lammps directory.
+```
+git pull https://github.com/stevenvdb/lammps newbarostat
+```
+(or use git with ssh if you have a key on github)
+You will have to commit the merge .. Currently this merges without problem, however, if it does not than changes in lammps
+prevent this and you need to carefully resolve!! Let us know!!!
+
+IMPORTANT: We have observed some issues in regular simulations when this new MTTK barostat is included. Therefore, DO NOT PUSH this
+repo back to MOFplus once this new barostat was pulled. Use a second repo without it to develop.
+
+### Compile the code
+
+Follow these steps one by one:
 
 ```
-cd src
+cd lammps
+
+# the following is necessary to successfully install this lammps version even if you do not want to use h5md or hdf5
+cd lib/h5md
+make -f Makefile.h5cc
+
+# In order to access the hdf5 files you have to edit the file Makefile.lammps
+# Mine looks like this (UBUNTU based MINT):
+#  h5md_SYSINC = -I/usr/include/hdf5/serial
+#  h5md_SYSLIB = -L/usr/lib/x86_64-linux-gnu/hdf5/serial/ -lhdf5
+#  the first entry points to the leader file (try "locate hdf5.h" to find it)
+#  the second entry points to the lib (try "locate libhdf5")
+
+cd ../../src
 
 make yes-USER-COLVARS
 make yes-CLASS2
@@ -49,23 +78,29 @@ make yes-MC
 make yes-USER-MOFFF
 make yes-USER-MISC
 make yes-MOLECULE
+make yes-USER-H5MD
+make yes-USER-REAXC
 
-  --- by default we install the colvars package. very useful!
+#  --- by default we install the colvars package. very useful!
 
 cd ../lib/colvars/
 make -f Makefile.g++
 cd ../../src/
+
+# compile as shared lib 
 make mode=shlib mpi
 cd ../python
 ln -s ../src/liblammps.so .
 ln -s ../src/liblammps_mpi.so .
 cd ..
 ```
+
+### Setup PYTHONPATH
+
 afterwards the ./python directory has to be added to the pythonpath
 ```
 export PYTHONPATH=/home/$USER/sandbox/lammps/python:$PYTHONPATH
 ```
-
 
 ## Running the tests
 
