@@ -76,8 +76,8 @@ class pylmps(mpiobject):
         # reax defaults
         self.control["reaxff_timestep"] = 0.1  # ReaxFF timestep is smaller than usual
         self.control["reaxff_filepath"] = "."
-        if os.environ.has_key("REAXFF_FILES"):
-            self.control["reaxff_filepath"] = os.environ["REAXFF_FILES"]
+        #if os.environ.has_key("REAXFF_FILES"):
+        #    self.control["reaxff_filepath"] = os.environ["REAXFF_FILES"]
         self.control["reaxff_bondfile"] = self.name + ".bonds"
         self.control["reaxff_bondfreq"] = 200
         # defaults
@@ -872,7 +872,8 @@ class pylmps(mpiobject):
 
     def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=[], rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
-            colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False, dump_thermo=True):
+            colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False, dump_thermo=True, 
+            wrap = True):
         """Defines the MD settings
         
         MD_init has to be called before a MD simulation can be performed, the ensemble along with the
@@ -936,14 +937,17 @@ class pylmps(mpiobject):
             p1,p2 = p,p
         # generate regular dump (ASCII)
         if dump is True:
-            self.lmps.command('dump %s all custom %i %s.dump id type element x y z' % (stage+"_dump", tnstep, stage))
+            if wrap:
+                self.lmps.command('dump %s all custom %i %s.dump id type element x y z' % (stage+"_dump", tnstep, stage))
+            else:
+                self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
             if self.use_uff:
                 plmps_elems = self.uff_plmps_elems
             elif self.use_reaxff:
                 plmps_elems = self.ff2lmp.plmps_atypes
             else:
                 plmps_elems = self.ff2lmp.plmps_elems
-            self.lmps.command('dump_modify %s element %s' % (stage+"_dump", string.join(plmps_elems)))
+            self.lmps.command('dump_modify %s element %s' % (stage+"_dump", " ".join(plmps_elems)))
             self.md_dumps.append(stage+"_dump")
         # do velocity startup
         if startup:
@@ -1009,7 +1013,7 @@ class pylmps(mpiobject):
                 self.md_fixes.append("reaxc_bnd")
         # now define what scalar values should be written to the log file
         thermo_style += ["spcpu"]
-        thermo_style_string = "thermo_style custom step " + string.join(thermo_style)
+        thermo_style_string = "thermo_style custom step " + " ".join(thermo_style)
         self.lmps.command(thermo_style_string)
         # now the thermo_style is defined and the length is known so we can setup the pdlp dump  
         if self.pdlp is not None:

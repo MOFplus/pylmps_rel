@@ -86,7 +86,7 @@ class expot_ase(expot_base):
     def calc_energy_force(self):
         # we have to set the actual coordinates and cell to ASE
         self.atoms.set_cell(self.cell)
-        self.atoms.set_xyz(self.xyz[self.idx])
+        self.atoms.set_positions(self.xyz[self.idx])
         # by default ase uses eV and A as units
         # consequently units has to be changed here to kcal/mol
         self.energy = self.atoms.get_potential_energy()*electronvolt/kcalmol
