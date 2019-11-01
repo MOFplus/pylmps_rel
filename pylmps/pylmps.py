@@ -406,7 +406,7 @@ class pylmps(mpiobject):
         self.lmps.command(ff)
         # use reaxff content to define the force field and atomtypes from the converter
         reaxff_file = self.control["reaxff_filepath"] + "/ffield.reax." + self.reaxff
-        atypes = string.join(self.ff2lmp.plmps_atypes)
+        atypes = " ".join(self.ff2lmp.plmps_atypes)
         self.lmps.command('pair_coeff * * %s %s' % (reaxff_file, atypes))
         # now define QEq and other things  with default settings
         self.lmps.command('fix qeq all qeq/reax 1 0.0 10.0 1e-6 reax/c')   
@@ -1035,7 +1035,7 @@ class pylmps(mpiobject):
                 # now close the hdf5 file becasue it will be written within lammps
                 self.pdlp.close()
                 # now create the dump
-                traj_string = string.join(traj + ["restart"])
+                traj_string = " ".join(traj + ["restart"])
                 if dump_thermo:
                     traj_string += " thermo"
                 print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
