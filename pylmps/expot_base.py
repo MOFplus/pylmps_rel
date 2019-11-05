@@ -19,6 +19,7 @@ Created on Tue Jul 23 17:26:02 CEST 2019
 import numpy as np
 from molsys import mpiobject
 from lammps import lammps
+from molsys.util.units import kcalmol, electronvolt
 
 
 class expot_base(mpiobject):
@@ -54,6 +55,8 @@ class expot_base(mpiobject):
         lmps = lammps(ptr=lmps)
         # get the current atom positions
         self.xyz = np.ctypeslib.as_array(lmps.gather_atoms("x",1,3))
+        # get current cell
+        self.cell = self.pl.get_cell()
         self.xyz.shape=(self.natoms,3)
         # calculate energy and force
         self.calc_energy_force()
@@ -62,6 +65,33 @@ class expot_base(mpiobject):
         # return the energy
         return self.energy
 
+
+
+class expot_ase(expot_base):
+
+    def __init__(self, atoms, idx):
+        super(expot_ase, self).__init__()
+        self.atoms = atoms
+        self.idx = idx
+        return
+
+    def setup(self,pl):
+        super(expot_ase, self).setup(pl)
+        assert len(self.idx) <= self.natoms
+        for i in self.idx:
+            assert i < self.natoms
+        self.pprint("An ASE external potential was added!")
+        return
+
+    def calc_energy_force(self):
+        # we have to set the actual coordinates and cell to ASE
+        self.atoms.set_cell(self.cell)
+        self.atoms.set_positions(self.xyz[self.idx])
+        # by default ase uses eV and A as units
+        # consequently units has to be changed here to kcal/mol
+        self.energy = self.atoms.get_potential_energy()*electronvolt/kcalmol
+        self.force[self.idx] = self.atoms.get_forces()*electronvolt/kcalmol
+        return self.energy, self.force
 
 
 """

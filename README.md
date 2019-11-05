@@ -80,6 +80,7 @@ make yes-USER-MISC
 make yes-MOLECULE
 make yes-USER-H5MD
 make yes-USER-REAXC
+make yes-PYTHON
 
 #  --- by default we install the colvars package. very useful!
 
@@ -94,6 +95,7 @@ ln -s ../src/liblammps.so .
 ln -s ../src/liblammps_mpi.so .
 cd ..
 ```
+For using with python3 you have to copy the Makefile.lammps.python3 to Makefile.lammps in /lib/python.
 
 ### Setup PYTHONPATH
 
