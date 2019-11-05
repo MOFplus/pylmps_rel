@@ -1,4 +1,4 @@
-#!/usr/bin/python -i
+#!/usr/bin/python3 -i
 # -*- coding: utf-8 -*-
 
 ###########################################################################
@@ -18,13 +18,13 @@ def write_xyz(f,xyz,idxs,elems):
     order = numpy.argsort(idxs)
     f.write(str(len(xyz))+'\n\n')
     for i,idx in enumerate(order):
-        print  (elems[idx],)+tuple(xyz[idx])
+        print((elems[idx],)+tuple(xyz[idx]))
         f.write('%s %12.6f %12.6f %12.6f\n' % ((elems[idx],)+tuple(xyz[idx])))
     #f.write('\n')
     return
 
 
-print 'usage: [dumpfile]'
+print('usage: [dumpfile]')
 
 dump = sys.argv[1]
 name =  dump.rsplit('.',1)[-1]
@@ -43,7 +43,7 @@ natoms_flag=False
 idxs = []
 xyz = []
 elems = []
-for i,l in enumerate(df.xreadlines()):
+for i,l in enumerate(df):
     if atoms == False:
         if l.count('ITEM: ATOMS') == 0:
             continue
@@ -60,7 +60,7 @@ for i,l in enumerate(df.xreadlines()):
             atoms=False
             atoms2=False
             nsteps += 1
-            if nsteps % 100 == 0: print nsteps
+            if nsteps % 100 == 0: print(nsteps)
             continue
         else:
             atoms2 = True
