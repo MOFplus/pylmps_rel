@@ -5,7 +5,7 @@ import os
 import subprocess
 
 from .pylmps import pylmps
-from .expot_base import expot_base, expot_test
+from .expot_base import expot_base, expot_test, expot_ase
 
 def git_revision_hash():
     wrk_dir = os.getcwd()
@@ -26,4 +26,4 @@ rev_no, commit = git_revision_hash()
 __version_info__ = (0, 0, rev_no, "%s"%commit)
 __version__ = "%i.%i.%i.%s"%__version_info__
 
-__all__=["pylmps", "expot_base", "expot_test"]
+__all__=["pylmps", "expot_base", "expot_test", "expot_ase"]
