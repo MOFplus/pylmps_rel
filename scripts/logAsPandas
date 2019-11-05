@@ -14,6 +14,8 @@ import pandas as pd
 from io import StringIO
 import matplotlib.pyplot as plt
 import pickle
+import pyblock
+
 
 logfile = sys.argv[1]
 name = logfile.rsplit('.',1)[0]
@@ -59,3 +61,7 @@ cellangles =data[['CellAlpha','CellBeta','CellGamma']]
 cell.describe()
 
 pickle.dump(data,open(name+'.pickle','wb'))
+data.to_hdf(name+'.pdh5','log')
+
+
+
