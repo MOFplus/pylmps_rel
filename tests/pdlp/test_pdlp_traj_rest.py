@@ -9,4 +9,4 @@ def test_pdlp_traj():
 
     pl.end()
 
-#test_pdlp_traj()
+test_pdlp_traj()

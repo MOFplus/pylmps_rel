@@ -8,7 +8,7 @@ ref_energies = {
            "bond" :     47.3757530 , 
           "angle" :    282.4041314 ,
             "oop" :      6.9431505 , 
-       "torsions" :      7.4500266 ,
+        "torsion" :      7.4500266 ,
 }
    
 

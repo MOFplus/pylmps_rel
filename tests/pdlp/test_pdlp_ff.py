@@ -31,5 +31,5 @@ def test_restart_pdlp():
 #
 #    pl.end()
 
-#test_restart_pdlp()
+test_restart_pdlp()
 # test_pdlp_traj()
