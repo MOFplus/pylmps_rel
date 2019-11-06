@@ -1028,18 +1028,19 @@ class pylmps(mpiobject):
                 else:
                     thermo_values = []
                 self.pdlp.prepare_stage(stage, traj, tnstep, tstep=timestep/1000.0, thermo_values=thermo_values)
-                if self.use_reaxff:
-                    if self.control["reaxff_bondfile"] is not None:
-                        # add the datasets for bondtab and bondorder to the current stage
-                        self.pdlp.add_bondtab(stage, self.nbondsmax)
-                # now close the hdf5 file becasue it will be written within lammps
-                self.pdlp.close()
                 # now create the dump
                 traj_string = " ".join(traj + ["restart"])
                 if dump_thermo:
                     traj_string += " thermo"
+                if self.use_reaxff:
+                    if self.control["reaxff_bondfile"] is not None:
+                        # add the datasets for bondtab and bondorder to the current stage
+                        self.pdlp.add_bondtab(stage, self.nbondsmax)
+                        traj_string += " bond"
+                # now close the hdf5 file becasue it will be written within lammps
+                self.pdlp.close()
                 print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
-                self.lmps.command("dump %s all pdlp %i %s stage %s %s  bond" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.lmps.command("dump %s all pdlp %i %s stage %s %s " % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
                 self.md_dumps.append(stage+"_pdlp")
         return
 
