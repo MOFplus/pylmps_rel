@@ -231,6 +231,8 @@ class pylmps(mpiobject):
         elif self.use_reaxff:
             # incase of reaxff we need to converter only for the data file
             self.ff2lmp = ff2lammps.ff2lammps(self.mol, reax=True)
+        if self.use_uff:
+            self.setup_uff(uff)
         # now converter is in place .. transfer settings
         self.ff2lmp.setting("origin", self.control["origin"])
         if local:
@@ -254,9 +256,7 @@ class pylmps(mpiobject):
         #further settings in order to be compatible to pydlpoly
         self.QMMM = False
         self.bcond = bcond
-        if self.use_uff:
-            self.setup_uff(uff)
-        elif self.use_reaxff:
+        if self.use_reaxff:
             self.timer.start("write data")
             self.ff2lmp.write_data(filename=self.data_file)
             self.timer.stop()
