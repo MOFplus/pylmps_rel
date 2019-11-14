@@ -26,5 +26,6 @@ def test_opt():
     for e in ref_energies.keys():
         assert abs(ref_energies[e]-energies[e])<1.0e-6
 
-
+if __name__=="__main__":
+    test_opt()
 
