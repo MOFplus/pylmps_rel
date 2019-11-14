@@ -76,8 +76,8 @@ class pylmps(mpiobject):
         # reax defaults
         self.control["reaxff_timestep"] = 0.1  # ReaxFF timestep is smaller than usual
         self.control["reaxff_filepath"] = "."
-        #if os.environ.has_key("REAXFF_FILES"):
-        #    self.control["reaxff_filepath"] = os.environ["REAXFF_FILES"]
+        if "REAXFF_FILES" in os.environ:
+            self.control["reaxff_filepath"] = os.environ["REAXFF_FILES"]
         self.control["reaxff_bondfile"] = self.name + ".bonds"
         self.control["reaxff_bondfreq"] = 200
         # defaults
@@ -314,7 +314,8 @@ class pylmps(mpiobject):
         # set the flag
         self.is_setup = True
         # report timing
-        self.timer.write()
+        if self.is_master:
+            self.timer.write()
         if not self.use_uff and not self.use_reaxff:
             self.ff2lmp.report_timer()
         return
@@ -1039,7 +1040,7 @@ class pylmps(mpiobject):
                         traj_string += " bond"
                 # now close the hdf5 file becasue it will be written within lammps
                 self.pdlp.close()
-                print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                # print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
                 self.lmps.command("dump %s all pdlp %i %s stage %s %s " % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
                 self.md_dumps.append(stage+"_pdlp")
         return
