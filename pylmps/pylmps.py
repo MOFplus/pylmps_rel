@@ -76,10 +76,12 @@ class pylmps(mpiobject):
         # reax defaults
         self.control["reaxff_timestep"] = 0.1  # ReaxFF timestep is smaller than usual
         self.control["reaxff_filepath"] = "."
-        #if os.environ.has_key("REAXFF_FILES"):
-        #    self.control["reaxff_filepath"] = os.environ["REAXFF_FILES"]
+        if "REAXFF_FILES" in os.environ:
+            self.control["reaxff_filepath"] = os.environ["REAXFF_FILES"]
         self.control["reaxff_bondfile"] = self.name + ".bonds"
         self.control["reaxff_bondfreq"] = 200
+        self.control["reaxff_safezone"] = None
+        self.control["reaxff_mincap"]   = None
         # defaults
         self.is_setup = False # will be set to True in setup -> to warn if certain functions are used after setup
         self.pdlp = None
@@ -314,7 +316,8 @@ class pylmps(mpiobject):
         # set the flag
         self.is_setup = True
         # report timing
-        self.timer.write()
+        if self.is_master:
+            self.timer.write()
         if not self.use_uff and not self.use_reaxff:
             self.ff2lmp.report_timer()
         return
@@ -400,9 +403,13 @@ class pylmps(mpiobject):
         self.lmps.command('read_data ' + self.data_file)  
         # . init force field
         ff = 'pair_style reax/c NULL'
-        # TBI add possibility to modify mincap and safezone keaywords here
-        #if Memory: ff += ' mincap %d' %Memory         
-        #if Safezone: ff += ' safezone %.02f' %Safezone
+        # possibility to modify mincap and safezone keywords
+        if self.control["reaxff_mincap"] is not None:
+            ff += ' mincap %d' % int(self.control["reaxff_mincap"])
+            self.pprint("Using a non-default mincap of %d" % int(self.control["reaxff_mincap"]))         
+        if self.control["reaxff_safezone"] is not None:
+            ff += ' safezone %f' % float(self.control["reaxff_safezone"])
+            self.pprint("Using a non-default safezone of %f" % float(self.control["reaxff_safezone"]))         
         self.lmps.command(ff)
         # use reaxff content to define the force field and atomtypes from the converter
         reaxff_file = self.control["reaxff_filepath"] + "/ffield.reax." + self.reaxff
@@ -1040,7 +1047,7 @@ class pylmps(mpiobject):
                         traj_string += " bond"
                 # now close the hdf5 file becasue it will be written within lammps
                 self.pdlp.close()
-                print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                # print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
                 self.lmps.command("dump %s all pdlp %i %s stage %s %s " % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
                 self.md_dumps.append(stage+"_pdlp")
         return

@@ -244,7 +244,10 @@ class ff2lammps(base):
 
     @timer("write data")    
     def write_data(self, filename="tmp.data"):
-        if self.mpi_rank > 0: return
+        if self.mpi_rank > 0: 
+            # wait on master to finish
+            self.mpi_comm.barrier()
+            return
         self.data_filename = filename
         f = open(filename, "w")
         # write header
@@ -374,6 +377,8 @@ class ff2lammps(base):
                         f.write("%10d %5d %8d %8d %8d %8d # %s\n" % (i+1, self.par_types["oop"][tuple(oopt)], a+1, c+1, d+1, b+1, oopt))
         f.write("\n")
         f.close()
+        # sync with other nodes
+        self.mpi_comm.barrier()
         return
 
     def parf(self, n):
@@ -631,7 +636,10 @@ class ff2lammps(base):
         NOTE: add read data ... fix header with periodic info
         """
         assert self.reax != True, "Not to be used with ReaxFF"
-        if self.mpi_rank > 0: return
+        if self.mpi_rank > 0: 
+            # wait for master to finish
+            self.mpi_comm.barrier()
+            return
         self.input_filename = filename
         f = open(filename, "w")
         # write standard header        
@@ -850,9 +858,12 @@ class ff2lammps(base):
             f.write(ff.readlines())
             ff.close()
         f.close()
+        # sync with other nodes
+        self.mpi_comm.barrier()
         return
 
     def report_timer(self):
-        self.timer.write()
+        if self.mpi_rank == 0:
+            self.timer.write()
 
     
