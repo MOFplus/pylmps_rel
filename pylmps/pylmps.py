@@ -870,7 +870,7 @@ class pylmps(mpiobject):
 
     LATMIN = LATMIN_sd
 
-    def MD_init(self, stage, T = None, p=None, startup = False, ensemble='nve', thermo=None, 
+    def MD_init(self, stage, T = None, p=None, startup = False, startup_seed = 42, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=[], rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
             colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False, dump_thermo=True, 
             wrap = True):
@@ -886,6 +886,7 @@ class pylmps(mpiobject):
             p (float or list of floats, optional): Defaults to None. Pressure of the simulation, if List of len 2 Lammps will perform
             a linear ramp of the Temperature
             startup (bool, optional): Defaults to False. if True, sample initial velocities from maxwell boltzmann distribution
+            startup_seed (int, optional): Defaults to 42. Random seed used for the initial velocities 
             ensemble (str, optional): Defaults to 'nve'. ensemble of the simulation, can be one of 'nve', 'nvt' or 'npt'
             thermo (str, optional): Defaults to None. Thermostat to be utilized, can be 'ber' or 'hoover'
             relax (tuple, optional): Defaults to (0.1,1.). relaxation times for the Thermostat and Barostat
@@ -951,7 +952,7 @@ class pylmps(mpiobject):
             self.md_dumps.append(stage+"_dump")
         # do velocity startup
         if startup:
-            self.lmps.command('velocity all create %12.6f 42 rot yes dist gaussian' % (T1))
+            self.lmps.command('velocity all create %12.6f %d rot yes dist gaussian' % (T1,startup_seed))
         # apply fix
         if ensemble == 'nve':
             self.md_fixes = [stage]
