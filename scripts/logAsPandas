@@ -16,6 +16,9 @@ import matplotlib.pyplot as plt
 import pickle
 import pyblock
 
+interactive=True
+if sys.argv.count('-silent'):
+    interactive=False
 
 logfile = sys.argv[1]
 name = logfile.rsplit('.',1)[0]
@@ -62,6 +65,9 @@ cell.describe()
 
 pickle.dump(data,open(name+'.pickle','wb'))
 data.to_hdf(name+'.pdh5','log')
+
+if interactive is False:
+    os._exit(1)
 
 
 
