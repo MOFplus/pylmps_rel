@@ -89,10 +89,11 @@ class pylmps(mpiobject):
         self.external_pot          = []
         # datafuncs
         self.data_funcs = {\
-            "xyz"   : self.get_xyz,\
-            "vel"   : self.get_vel,\
-            "force" : self.get_force,\
-            "cell"  : self.get_cell,\
+            "xyz"    : self.get_xyz,\
+            "vel"    : self.get_vel,\
+            "force"  : self.get_force,\
+            "cell"   : self.get_cell,\
+            "charges": self.get_charge,\
         }
         return
 
@@ -542,6 +543,13 @@ class pylmps(mpiobject):
         vel = np.ctypeslib.as_array(self.lmps.gather_atoms("v",1,3))
         vel.shape=(self.natoms,3)
         return vel
+
+    def get_charge(self):
+        """
+        get the charges as a numpy array
+        """
+        chg = np.ctypeslib.as_array(self.lmps.gather_atoms("q",1,1))
+        return chg
 
     def get_cell_volume(self):
         """ 
