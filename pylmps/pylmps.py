@@ -131,7 +131,7 @@ class pylmps(mpiobject):
         self.external_pot.append((expot, callback_name))
         return
 
-    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
+    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False,
             logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, reaxff="cho",
             **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
@@ -146,6 +146,7 @@ class pylmps(mpiobject):
                 ff (str, optional): Defaults to "MOF-FF". Name of the used Forcefield when assigning from the web MOF+
                 pdlp (str, optional): defaults to None. Filename of the pdlp file 
                 restart (str, optional): stage name of the pdlp fiel to restart from
+                restart_vel (bool, optional): Defaults to False. If True: read velocities from restart stage (must be given) 
                 logfile (str, optional): Defaults to 'none'. logfile
                 bcond (int, optional): Defaults to 3. Boundary Condition - 1: cubic, 2: orthorombic, 3: triclinic
                 uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
@@ -197,7 +198,10 @@ class pylmps(mpiobject):
             if restart is not None:
                 # The mol object should be read from the pdlp file
                 self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self, restart=restart)
-                self.mol  = self.pdlp.get_mol_from_system()
+                if restart_vel is True:
+                    self.mol, restart_vel  = self.pdlp.get_mol_from_system(vel=True)
+                else:
+                    self.mol = self.pdlp.get_mol_from_system() 
             else:
                 # we need to make a molsys and read it in
                 self.mol = molsys.mol()
@@ -308,6 +312,9 @@ class pylmps(mpiobject):
             self.lmps.command("fix_modify %s energy yes" % fix_id)
             self.pprint("External Potential %s is set up as fix %s" % (expot.name, fix_id))
         # compute energy of initial config
+        if restart_vel is not False:
+            # set velocities that have been read from pdlp file (do not use startup=True in MDinit becasue that will overwrite the velocities again)
+            self.set_vel(restart_vel)
         self.calc_energy()
         self.report_energies()
         self.md_fixes = []
@@ -584,6 +591,13 @@ class pylmps(mpiobject):
         set the xyz positions froma numpy array
         """
         self.lmps.scatter_atoms("x",1,3,np.ctypeslib.as_ctypes(xyz))
+        return
+
+    def set_vel(self, vel):
+        """
+        set the velocities from a numpy array
+        """
+        self.lmps.scatter_atoms("v",1,3,np.ctypeslib.as_ctypes(vel))
         return
        
     def get_cell(self):
