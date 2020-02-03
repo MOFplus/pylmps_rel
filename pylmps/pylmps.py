@@ -1074,15 +1074,27 @@ class pylmps(mpiobject):
                 self.md_dumps.append(stage+"_pdlp")
         return
 
-    def MD_run(self, nsteps, printout=100):
+    def MD_run(self, nsteps, printout=100, clear_dumps_fixes=True):
         #assert len(self.md_fixes) > 0
         self.lmps.command('thermo %i' % printout)
-        self.lmps.command('run %i' % nsteps)
-        for fix in self.md_fixes: self.lmps.command('unfix %s' % fix)
-        self.md_fixes = []
-        for dump in self.md_dumps: self.lmps.command('undump %s' % dump)
-        self.md_dumps = []
-        self.lmps.command('reset_timestep 0')
+        # lammps can not do runs with larger than 32 bit integer steps -> do consecutive calls
+        int32max = 2147483648
+        if nsteps > int32max:
+            nbig = nsteps//int32max
+            nrem = nsteps%int32max
+            for i in range(nbig):
+                self.lmps.run('run %i' % int32max)
+            self.lmps.run('run %i' % nrem)
+        else: 
+            self.lmps.command('run %i' % nsteps)
+        if clear_dumps_fixes:
+            for fix in self.md_fixes:
+                self.lmps.command('unfix %s' % fix)
+            self.md_fixes = []
+            for dump in self.md_dumps:
+                self.lmps.command('undump %s' % dump)
+            self.md_dumps = []
+            self.lmps.command('reset_timestep 0')
         return
 
  
