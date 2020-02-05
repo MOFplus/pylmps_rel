@@ -602,7 +602,7 @@ class pylmps(mpiobject):
         #if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
         if self.bcond <= 2:
             cd = cell.diagonal()
-            if ((self.bcond == 1) and (numpy.var(cd) > 1e-6)): # check if that is a cubic cell, raise error if not!
+            if ((self.bcond == 1) and (np.var(cd) > 1e-6)): # check if that is a cubic cell, raise error if not!
                 raise ValueError('the cell to be set is not a cubic cell,diagonals: '+str(cd)) 
             if cell_only:
                 self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f" % tuple(cd))
