@@ -525,7 +525,7 @@ class pylmps(mpiobject):
             etot += e[en]
             self.pprint("%15s : %15.8f kcal/mol" % (en, e[en]))
         self.pprint("%15s : %15.8f kcal/mol" % ("TOTAL", etot))
-        return
+        return etot
         
     def get_force(self):
         """
@@ -739,13 +739,13 @@ class pylmps(mpiobject):
         thresh *= np.sqrt(3*self.natoms)
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
-        self.report_energies()
+        etot = self.report_energies()
         # this command used here wihtout reaxff setup results in crashing LATMIN
         # the error is: 
         # ERROR: Energy was not tallied on needed timestep (../compute_pe.cpp:76)
         # Last command: run 1 pre no post no
-        if self.use_reaxff is True: self.lmps.command("reset_timestep 0") 
-        return
+        # if self.use_reaxff is True: self.lmps.command("reset_timestep 0") 
+        return etot
 
     MIN = MIN_cg
         
