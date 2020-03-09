@@ -86,7 +86,9 @@ class pylmps(mpiobject):
         self.is_setup = False # will be set to True in setup -> to warn if certain functions are used after setup
         self.pdlp = None
         self.md_dumps = []
-        self.external_pot          = []
+        self.external_pot = []
+        self.use_restraints = False
+        self.restraints = {}      # dictionary of restraints activated on MIN or MD_init
         # datafuncs
         self.data_funcs = {\
             "xyz"    : self.get_xyz,\
@@ -130,6 +132,84 @@ class pylmps(mpiobject):
         # globals()[callback_name] = expot.callback
         self.external_pot.append((expot, callback_name))
         return
+
+    def add_restraint(self, rtype, atoms, params, growK=False):
+        """add a restraint to the system
+        
+        Args:
+            rtype (string): type of restraint (bnd, ang, dih)
+            atoms (tuple of int): atom indices
+            params (tuple/list of floats): force cont, ref value, optional mult for dih
+            growK (bool, optional): growing K from zero in next MDrun. Defaults to False.
+        """
+        resttypes = ["bnd", "ang", "dih"]
+        assert rtype in resttypes
+        assert len(atoms) == resttypes.index(rtype)+2
+        if rtype == "dih":
+            assert len(params) == 2 or len(params) == 3
+        else:
+            assert len(params) == 2 
+        params = list(params) + [growK]
+        self.restraints[atoms] = params
+        self.use_restraints = True
+        return
+    
+    def clear_restraints(self):
+        self.use_restraints = False
+        self.restraints = {}
+        return
+
+    def set_restraints(self):
+        if not self.use_restraints:
+            return
+        rest_string = ""
+        for r in self.restraints:
+            rp = self.restraints[r]
+            if len(r) == 2:
+                r0 = rp[1]
+                kfin = rp[0]
+                if rp[2]:
+                    kint = 0.0
+                else:
+                    kint = kfin
+                rest_string += " bond %d %d %10.3f %10.3f %10.3f" % (r[0], r[1], kint, kfin, r0)
+            elif len(r) == 3:
+                a0 = rp[1]
+                kfin = rp[0]
+                if rp[2]:
+                    kint = 0.0
+                else:
+                    kint = kfin
+                rest_string += " angle %d %d %d %10.3f %10.3f %10.3f" % (r[0], r[1], r[2], kint, kfin, a0)
+            elif len(r) == 3:
+                d0 = rp[1]
+                kfin = rp[0]
+                if len(rp) == 4:
+                    mult = rp[2]
+                    grow = rp[3]
+                else:
+                    grow = rp[2]
+                    mult = False
+                if grow:
+                    kint = 0.0
+                else:
+                    kint = kfin
+                rest_string += " dihedral %d %d %d %d %10.3f %10.3f %10.3f" % (r[0], r[1], r[2], r[3], kint, kfin, d0)
+                if mult:
+                    rest_string += " mult %d" % mult
+            else:
+                raise "THis should not happen"
+        print ("Restraints are active")
+        # DEBUG DEBUG
+        print (rest_string)
+        self.lmps.command("fix restraint all restraint %s" % rest_string)
+        self.lmps.command("fix_modify restraint energy yes")
+        return
+
+    def unset_restraint(self):
+        self.lmps.command("unfix restraint")
+        return
+
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False,
             logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, reaxff="cho",
@@ -734,6 +814,7 @@ class pylmps(mpiobject):
 
     def MIN_cg(self, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100):
         assert method in ["cg", "hftn", "sd"]
+        self.set_restraints()
         # transform tresh from pydlpoly tresh to lammps tresh
         # pydlpoly uses norm(f)*sqrt(1/3nat) whereas lammps uses normf
         thresh *= np.sqrt(3*self.natoms)
@@ -744,13 +825,15 @@ class pylmps(mpiobject):
         # the error is: 
         # ERROR: Energy was not tallied on needed timestep (../compute_pe.cpp:76)
         # Last command: run 1 pre no post no
-        # if self.use_reaxff is True: self.lmps.command("reset_timestep 0") 
+        # if self.use_reaxff is True: self.lmps.command("reset_timestep 0")
+        self.unset_restraint() 
         return etot
 
     MIN = MIN_cg
         
     def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0,maxstep=20):
         assert method in ["cg", "sd"]
+        self.set_restraints()
         thresh *= np.sqrt(3*self.natoms)
         stop = False
         self.lmps.command("min_style %s" % method)
@@ -775,6 +858,7 @@ class pylmps(mpiobject):
                 from molsys.fileIO import lammpstrj
                 lammpstrj.write_raw(self.trajfile,counter,self.get_natoms(),self.get_cell(),self.mol.get_elems(),
                                     self.get_xyz(),np.zeros(self.get_natoms(),dtype='float'))
+        self.unset_restraint()
         return
             
     def LATMIN_sd(self,threshlat, thresh, lat_maxiter= 100, maxiter=500, fact = 2.0e-3, maxstep = 3.0):
@@ -1075,6 +1159,8 @@ class pylmps(mpiobject):
         return
 
     def MD_run(self, nsteps, printout=100, clear_dumps_fixes=True):
+        # set restraints if there are any
+        self.set_restraints()
         #assert len(self.md_fixes) > 0
         self.lmps.command('thermo %i' % printout)
         # lammps can not do runs with larger than 32 bit integer steps -> do consecutive calls
@@ -1095,6 +1181,7 @@ class pylmps(mpiobject):
                 self.lmps.command('undump %s' % dump)
             self.md_dumps = []
             self.lmps.command('reset_timestep 0')
+        self.unset_restraints()
         return
 
  
