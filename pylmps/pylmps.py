@@ -181,7 +181,7 @@ class pylmps(mpiobject):
                 else:
                     kint = kfin
                 rest_string += " angle %d %d %d %10.3f %10.3f %10.3f" % (r[0], r[1], r[2], kint, kfin, a0)
-            elif len(r) == 3:
+            elif len(r) == 4:
                 d0 = rp[1]
                 kfin = rp[0]
                 if len(rp) == 4:
