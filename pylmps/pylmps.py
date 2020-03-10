@@ -35,7 +35,7 @@ except ImportError:
 
 
 pressure = ["pxx", "pyy", "pzz", "pxy", "pxz", "pyz"]
-bcond_map = {1:'iso', 2:'aniso', 3:'tri'}
+bcond_map = {0:'non', 1:'iso', 2:'aniso', 3:'tri'}
 cellpar  = ["cella", "cellb", "cellc", "cellalpha", "cellbeta", "cellgamma"]
 
 
@@ -1020,7 +1020,7 @@ class pylmps(mpiobject):
             None: None
         """
         if bcond == None: bcond = bcond_map[self.bcond]
-        assert bcond in ['iso', 'aniso', 'tri']
+        assert bcond in ['non', 'iso', 'aniso', 'tri']
         conv_relax = 1000/timestep 
         # pressure in atmospheres
         # if wished open a specific log file
@@ -1182,7 +1182,7 @@ class pylmps(mpiobject):
                 self.lmps.command('undump %s' % dump)
             self.md_dumps = []
             self.lmps.command('reset_timestep 0')
-        self.unset_restraints()
+        self.unset_restraint()
         return
 
  
