@@ -202,12 +202,13 @@ class pylmps(mpiobject):
         print ("Restraints are active")
         # DEBUG DEBUG
         print (rest_string)
-        self.lmps.command("fix restraint all restraint %s" % rest_string)
-        self.lmps.command("fix_modify restraint energy yes")
+        self.lmps.command("fix restr all restrain %s" % rest_string)
+        self.lmps.command("fix_modify restr energy yes")
         return
 
     def unset_restraint(self):
-        self.lmps.command("unfix restraint")
+        if self.use_restraints:
+            self.lmps.command("unfix restr")
         return
 
 
