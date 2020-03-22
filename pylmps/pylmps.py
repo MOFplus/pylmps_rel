@@ -40,7 +40,7 @@ except ImportError:
 
 
 pressure = ["pxx", "pyy", "pzz", "pxy", "pxz", "pyz"]
-bcond_map = {1:'iso', 2:'aniso', 3:'tri'}
+bcond_map = {0:'non', 1:'iso', 2:'aniso', 3:'tri'}
 cellpar  = ["cella", "cellb", "cellc", "cellalpha", "cellbeta", "cellgamma"]
 
 
@@ -93,13 +93,16 @@ class pylmps(mpiobject):
         self.is_setup = False # will be set to True in setup -> to warn if certain functions are used after setup
         self.pdlp = None
         self.md_dumps = []
-        self.external_pot          = []
+        self.external_pot = []
+        self.use_restraints = False
+        self.restraints = {}      # dictionary of restraints activated on MIN or MD_init
         # datafuncs
         self.data_funcs = {\
-            "xyz"   : self.get_xyz,\
-            "vel"   : self.get_vel,\
-            "force" : self.get_force,\
-            "cell"  : self.get_cell,\
+            "xyz"    : self.get_xyz,\
+            "vel"    : self.get_vel,\
+            "force"  : self.get_force,\
+            "cell"   : self.get_cell,\
+            "charges": self.get_charge,\
         }
         return
 
@@ -137,7 +140,86 @@ class pylmps(mpiobject):
         self.external_pot.append((expot, callback_name))
         return
 
-    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None,
+    def add_restraint(self, rtype, atoms, params, growK=False):
+        """add a restraint to the system
+        
+        Args:
+            rtype (string): type of restraint (bnd, ang, dih)
+            atoms (tuple of int): atom indices
+            params (tuple/list of floats): force cont, ref value, optional mult for dih
+            growK (bool, optional): growing K from zero in next MDrun. Defaults to False.
+        """
+        resttypes = ["bnd", "ang", "dih"]
+        assert rtype in resttypes
+        assert len(atoms) == resttypes.index(rtype)+2
+        if rtype == "dih":
+            assert len(params) == 2 or len(params) == 3
+        else:
+            assert len(params) == 2 
+        params = list(params) + [growK]
+        self.restraints[atoms] = params
+        self.use_restraints = True
+        return
+    
+    def clear_restraints(self):
+        self.use_restraints = False
+        self.restraints = {}
+        return
+
+    def set_restraints(self):
+        if not self.use_restraints:
+            return
+        rest_string = ""
+        for r in self.restraints:
+            rp = self.restraints[r]
+            if len(r) == 2:
+                r0 = rp[1]
+                kfin = rp[0]
+                if rp[2]:
+                    kint = 0.0
+                else:
+                    kint = kfin
+                rest_string += " bond %d %d %10.3f %10.3f %10.3f" % (r[0], r[1], kint, kfin, r0)
+            elif len(r) == 3:
+                a0 = rp[1]
+                kfin = rp[0]
+                if rp[2]:
+                    kint = 0.0
+                else:
+                    kint = kfin
+                rest_string += " angle %d %d %d %10.3f %10.3f %10.3f" % (r[0], r[1], r[2], kint, kfin, a0)
+            elif len(r) == 4:
+                d0 = rp[1]
+                kfin = rp[0]
+                if len(rp) == 4:
+                    mult = rp[2]
+                    grow = rp[3]
+                else:
+                    grow = rp[2]
+                    mult = False
+                if grow:
+                    kint = 0.0
+                else:
+                    kint = kfin
+                rest_string += " dihedral %d %d %d %d %10.3f %10.3f %10.3f" % (r[0], r[1], r[2], r[3], kint, kfin, d0)
+                if mult:
+                    rest_string += " mult %d" % mult
+            else:
+                raise "THis should not happen"
+        print ("Restraints are active")
+        # DEBUG DEBUG
+        print (rest_string)
+        self.lmps.command("fix restr all restrain %s" % rest_string)
+        self.lmps.command("fix_modify restr energy yes")
+        return
+
+    def unset_restraint(self):
+        if self.use_restraints:
+            self.lmps.command("unfix restr")
+        return
+
+
+    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False,
             logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, reaxff="cho",
             **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
@@ -152,6 +234,7 @@ class pylmps(mpiobject):
                 ff (str, optional): Defaults to "MOF-FF". Name of the used Forcefield when assigning from the web MOF+
                 pdlp (str, optional): defaults to None. Filename of the pdlp file 
                 restart (str, optional): stage name of the pdlp fiel to restart from
+                restart_vel (bool, optional): Defaults to False. If True: read velocities from restart stage (must be given) 
                 logfile (str, optional): Defaults to 'none'. logfile
                 bcond (int, optional): Defaults to 3. Boundary Condition - 1: cubic, 2: orthorombic, 3: triclinic
                 uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
@@ -203,7 +286,10 @@ class pylmps(mpiobject):
             if restart is not None:
                 # The mol object should be read from the pdlp file
                 self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self, restart=restart)
-                self.mol  = self.pdlp.get_mol_from_system()
+                if restart_vel is True:
+                    self.mol, restart_vel  = self.pdlp.get_mol_from_system(vel=True)
+                else:
+                    self.mol = self.pdlp.get_mol_from_system() 
             else:
                 # we need to make a molsys and read it in
                 self.mol = molsys.mol()
@@ -319,6 +405,9 @@ class pylmps(mpiobject):
             self.lmps.command("fix_modify %s energy yes" % fix_id)
             self.pprint("External Potential %s is set up as fix %s" % (expot.name, fix_id))
         # compute energy of initial config
+        if restart_vel is not False:
+            # set velocities that have been read from pdlp file (do not use startup=True in MDinit becasue that will overwrite the velocities again)
+            self.set_vel(restart_vel)
         self.calc_energy()
         self.report_energies()
         self.md_fixes = []
@@ -535,7 +624,7 @@ class pylmps(mpiobject):
             etot += e[en]
             self.pprint("%15s : %15.8f kcal/mol" % (en, e[en]))
         self.pprint("%15s : %15.8f kcal/mol" % ("TOTAL", etot))
-        return
+        return etot
         
     def get_force(self):
         """
@@ -560,6 +649,13 @@ class pylmps(mpiobject):
         vel = np.ctypeslib.as_array(self.lmps.gather_atoms("v",1,3))
         vel.shape=(self.natoms,3)
         return vel
+
+    def get_charge(self):
+        """
+        get the charges as a numpy array
+        """
+        chg = np.ctypeslib.as_array(self.lmps.gather_atoms("q",1,1))
+        return chg
 
     def get_cell_volume(self):
         """ 
@@ -594,6 +690,13 @@ class pylmps(mpiobject):
         set the xyz positions froma numpy array
         """
         self.lmps.scatter_atoms("x",1,3,np.ctypeslib.as_ctypes(xyz))
+        return
+
+    def set_vel(self, vel):
+        """
+        set the velocities from a numpy array
+        """
+        self.lmps.scatter_atoms("v",1,3,np.ctypeslib.as_ctypes(vel))
         return
        
     def get_cell(self):
@@ -730,23 +833,26 @@ class pylmps(mpiobject):
 
     def MIN_cg(self, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100):
         assert method in ["cg", "hftn", "sd"]
+        self.set_restraints()
         # transform tresh from pydlpoly tresh to lammps tresh
         # pydlpoly uses norm(f)*sqrt(1/3nat) whereas lammps uses normf
         thresh *= np.sqrt(3*self.natoms)
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
-        self.report_energies()
+        etot = self.report_energies()
         # this command used here wihtout reaxff setup results in crashing LATMIN
         # the error is: 
         # ERROR: Energy was not tallied on needed timestep (../compute_pe.cpp:76)
         # Last command: run 1 pre no post no
-        if self.use_reaxff is True: self.lmps.command("reset_timestep 0") 
-        return
+        # if self.use_reaxff is True: self.lmps.command("reset_timestep 0")
+        self.unset_restraint() 
+        return etot
 
     MIN = MIN_cg
         
     def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0,maxstep=20):
         assert method in ["cg", "sd"]
+        self.set_restraints()
         thresh *= np.sqrt(3*self.natoms)
         stop = False
         self.lmps.command("min_style %s" % method)
@@ -771,6 +877,7 @@ class pylmps(mpiobject):
                 from molsys.fileIO import lammpstrj
                 lammpstrj.write_raw(self.trajfile,counter,self.get_natoms(),self.get_cell(),self.mol.get_elems(),
                                     self.get_xyz(),np.zeros(self.get_natoms(),dtype='float'))
+        self.unset_restraint()
         return
             
     def LATMIN_sd(self,threshlat, thresh, lat_maxiter= 100, maxiter=500, fact = 2.0e-3, maxstep = 3.0):
@@ -931,7 +1038,7 @@ class pylmps(mpiobject):
             None: None
         """
         if bcond == None: bcond = bcond_map[self.bcond]
-        assert bcond in ['iso', 'aniso', 'tri']
+        assert bcond in ['non', 'iso', 'aniso', 'tri']
         conv_relax = 1000/timestep 
         # pressure in atmospheres
         # if wished open a specific log file
@@ -1070,15 +1177,30 @@ class pylmps(mpiobject):
                 self.md_dumps.append(stage+"_pdlp")
         return
 
-    def MD_run(self, nsteps, printout=100):
+    def MD_run(self, nsteps, printout=100, clear_dumps_fixes=True):
+        # set restraints if there are any
+        self.set_restraints()
         #assert len(self.md_fixes) > 0
         self.lmps.command('thermo %i' % printout)
-        self.lmps.command('run %i' % nsteps)
-        for fix in self.md_fixes: self.lmps.command('unfix %s' % fix)
-        self.md_fixes = []
-        for dump in self.md_dumps: self.lmps.command('undump %s' % dump)
-        self.md_dumps = []
-        self.lmps.command('reset_timestep 0')
+        # lammps can not do runs with larger than 32 bit integer steps -> do consecutive calls
+        int32max = 2147483648
+        if nsteps > int32max:
+            nbig = nsteps//int32max
+            nrem = nsteps%int32max
+            for i in range(nbig):
+                self.lmps.run('run %i' % int32max)
+            self.lmps.run('run %i' % nrem)
+        else: 
+            self.lmps.command('run %i' % nsteps)
+        if clear_dumps_fixes:
+            for fix in self.md_fixes:
+                self.lmps.command('unfix %s' % fix)
+            self.md_fixes = []
+            for dump in self.md_dumps:
+                self.lmps.command('undump %s' % dump)
+            self.md_dumps = []
+            self.lmps.command('reset_timestep 0')
+        self.unset_restraint()
         return
 
  
