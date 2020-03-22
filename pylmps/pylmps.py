@@ -16,6 +16,11 @@ import string
 import os
 from mpi4py import MPI
 
+try:
+    import __builtin__
+except ImportError:
+    import builtins as __builtin__
+
 import molsys
 from . import ff2lammps
 from .util import rotate_cell
@@ -49,6 +54,7 @@ class pylmps(mpiobject):
         # start lammps
         cmdargs = ['-log', logfile]
         if screen == False: cmdargs+=['-screen', 'none']
+        self.print_to_screen = screen
         self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
         # handle names of energy contributions
         self.evars = {
@@ -76,6 +82,7 @@ class pylmps(mpiobject):
         # reax defaults
         self.control["reaxff_timestep"] = 0.1  # ReaxFF timestep is smaller than usual
         self.control["reaxff_filepath"] = "."
+        self.use_reaxff = False
         if "REAXFF_FILES" in os.environ:
             self.control["reaxff_filepath"] = os.environ["REAXFF_FILES"]
         self.control["reaxff_bondfile"] = self.name + ".bonds"
@@ -218,7 +225,7 @@ class pylmps(mpiobject):
             self.mol.bcond = bcond
             # now generate the converter
             self.timer.start("init ff2lammps")
-            self.ff2lmp = ff2lammps.ff2lammps(self.mol)
+            self.ff2lmp = ff2lammps.ff2lammps(self.mol,print_timer=self.print_to_screen)
             self.timer.stop()
             # adjust the settings
             if self.control["oop_umbrella"]:
@@ -236,7 +243,10 @@ class pylmps(mpiobject):
         if self.use_uff:
             self.setup_uff(uff)
         # now converter is in place .. transfer settings
-        self.ff2lmp.setting("origin", self.control["origin"])
+        try:
+            self.ff2lmp.setting("origin", self.control["origin"])
+        except:
+            pass
         if local:
             self.rundir=self.start_dir
         else:
@@ -266,7 +276,7 @@ class pylmps(mpiobject):
             # in this subroutine lamps commands are issued to read the data file and strat up (instead of reading a lammps input file)
             self.setup_reaxff()
             self.timer.stop()
-        else:
+        elif self.use_uff==False:
             # before writing output we can adjust the settings in ff2lmp
             # TBI
             self.timer.start("write data")
@@ -278,6 +288,8 @@ class pylmps(mpiobject):
             self.timer.start("lammps read input")
             self.lmps.file(self.inp_file)
             self.timer.stop()
+        else:
+            self.lmps.file(self.inp_file) # for UFF setup
         os.chdir(self.start_dir)
         # connect variables for extracting
         for e in self.evars:
@@ -316,7 +328,7 @@ class pylmps(mpiobject):
         # set the flag
         self.is_setup = True
         # report timing
-        if self.is_master:
+        if self.is_master and self.print_to_screen:
             self.timer.write()
         if not self.use_uff and not self.use_reaxff:
             self.ff2lmp.report_timer()
@@ -490,7 +502,13 @@ class pylmps(mpiobject):
     def set_logger(self, default = 'none'):
         self.lmps.command("log %s" % default)
         return
-        
+
+    def pprint(self, *args, **kwargs):
+        """Parallel print function"""
+        if self.is_master and self.print_to_screen:
+            __builtin__.print(*args, file=self.out, **kwargs)
+            self.out.flush()
+
     def calc_energy(self, init=False):
         if init:
             self.lmps.command("run 0 pre yes post no")
