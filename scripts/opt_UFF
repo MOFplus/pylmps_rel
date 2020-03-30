@@ -27,7 +27,7 @@ pl.LATMIN(0.1, 0.1)
 pl.LATMIN(0.05, 0.05)
 pl.MIN(0.01)
 
-pl.write(name+'_uff_latopt.mfpx')
+pl.write(name+'_UFF_latopt.mfpx')
 
 
 

@@ -10,8 +10,8 @@
 import numpy 
 import os
 import shutil
+import subprocess
 import sys
-import pydlpoly
 import molsys
 import h5py
 
@@ -25,6 +25,8 @@ def write_xyz_to_traj(traj,xyz):
 
 
 print('usage: [name] [dump] [pdlp]')
+
+write_cell=True
 
 name = sys.argv[1]
 dumpf = sys.argv[2]
@@ -55,7 +57,12 @@ xyz = numpy.zeros((natoms,3),dtype=numpy.float32)
 pdlp = h5py.File(pdlpf)
 stage= pdlp.require_group(stagename)
 traj = stage.require_group("traj")
-traj.attrs['nstep'] = 100  ## TODO: get this from the timing information in the dump file
+
+nstep_str = subprocess.getoutput("grep -A 1   'TIMESTEP' %s  | head -n 5" % (dumpf,))
+nstep = numpy.diff([int(x) for i,x in enumerate(nstep_str.split('\n')) if i in [1,4]])[0]
+print('nstep of %d detected' % (nstep,))
+traj.attrs['nstep'] = nstep  ## TODO: get this from the timing information in the dump file
+print('using default timestep of 1fs ... change code to do different!')
 traj.attrs['tstep'] = 0.001
 traj.create_dataset('xyz', dtype='float32',shape=(0,natoms,3),maxshape=(None,natoms,3),chunks=(1,natoms,3))
 
