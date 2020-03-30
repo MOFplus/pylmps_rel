@@ -74,6 +74,8 @@ class pylmps(mpiobject):
         # change either by setting before setup or use a kwarg in setup
         self.control = {}
         self.control["kspace"] = True
+        self.control["kspace_method"] = 'ewald'
+        self.control["kspace_prec"] = 1.e-6
         self.control["oop_umbrella"] = False
         self.control["kspace_gewald"] = 0.0
         self.control["cutoff"] = 12.0
@@ -220,8 +222,8 @@ class pylmps(mpiobject):
 
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False,
-            logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, reaxff="cho",
-            **kwargs):
+            logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, reaxff="cho", kspace_style='ewald',
+            kspace=True,  **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
         
             any keyword arguments known to control will be set to control
@@ -240,6 +242,9 @@ class pylmps(mpiobject):
                 uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
                 use_pdlp (bool, optionl): defaults to False, if True use dump_pdlp (must be compiled)
                 reaxff (str, optional): defaults to "cho". name of the reaxff force field file (ffiled.reax.<name>) to be used if FF=="ReaxFF" 
+                kspace (bool): defaults to True. If True, use kspace methods to compute the electrostatic interactions
+                kspace_style (str), defaults to "ewald": The method to be used if kspace == True. For now, try with "ewald" or "pppm" (https://lammps.sandia.gov/doc/kspace_style.html)
+                kspace_prec (float), defaults to 1e-6: accuracy setting for the kspace method (https://lammps.sandia.gov/doc/kspace_style.html)
         """
         self.timer.start("setup")
         # put all known kwargs into self.control
@@ -249,10 +254,10 @@ class pylmps(mpiobject):
 #        cmdargs = ['-log', logfile]
 #        if screen == False: cmdargs+=['-screen', 'none']
 #        self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
-
         # assert settings
         assert self.control["origin"] in ["zero", "center"]
-
+        self.control['kspace_style'] = kspace_style
+        self.control['kspace'] = kspace
         # depending on what type of input is given a setup will be done
         # the default is to load an mfpx file and assign from MOF+ (using force field MOF-FF)
         # if par is given or ff="file" we use mfpx/ric/par
@@ -319,6 +324,10 @@ class pylmps(mpiobject):
                 self.ff2lmp.setting("use_improper_umbrella_harmonic", True)
             if self.control["kspace_gewald"] != 0.0:
                 self.ff2lmp.setting("kspace_gewald", self.control["kspace_gewald"])
+            if 'kspace_method' in self.control:
+                self.ff2lmp.setting("kspace_method", self.control["kspace_method"])
+            if 'kspace_prec' in self.control:
+                self.ff2lmp.setting("kspace_prec", self.control["kspace_prec"])
             if 'cutoff' in self.control:
                 self.ff2lmp.setting("cutoff", self.control["cutoff"])
             if self.control['cutoff_coul'] is not None:
