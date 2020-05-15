@@ -16,6 +16,11 @@ import string
 import os
 from mpi4py import MPI
 
+try:
+    import __builtin__
+except ImportError:
+    import builtins as __builtin__
+
 import molsys
 from . import ff2lammps
 from .util import rotate_cell
@@ -49,6 +54,7 @@ class pylmps(mpiobject):
         # start lammps
         cmdargs = ['-log', logfile]
         if screen == False: cmdargs+=['-screen', 'none']
+        self.print_to_screen = screen
         self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
         # handle names of energy contributions
         self.evars = {
@@ -68,6 +74,8 @@ class pylmps(mpiobject):
         # change either by setting before setup or use a kwarg in setup
         self.control = {}
         self.control["kspace"] = True
+        self.control["kspace_method"] = 'ewald'
+        self.control["kspace_prec"] = 1.e-6
         self.control["oop_umbrella"] = False
         self.control["kspace_gewald"] = 0.0
         self.control["cutoff"] = 12.0
@@ -76,6 +84,7 @@ class pylmps(mpiobject):
         # reax defaults
         self.control["reaxff_timestep"] = 0.1  # ReaxFF timestep is smaller than usual
         self.control["reaxff_filepath"] = "."
+        self.use_reaxff = False
         if "REAXFF_FILES" in os.environ:
             self.control["reaxff_filepath"] = os.environ["REAXFF_FILES"]
         self.control["reaxff_bondfile"] = self.name + ".bonds"
@@ -214,8 +223,8 @@ class pylmps(mpiobject):
 
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False,
-            logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, reaxff="cho",
-            **kwargs):
+            logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, reaxff="cho", kspace_style='ewald',
+            kspace=True,  **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
         
             any keyword arguments known to control will be set to control
@@ -234,6 +243,9 @@ class pylmps(mpiobject):
                 uff (str, optional): Defaults to UFF4MOF. Can only be UFF or UFF4MOF. If ff="UFF" then a UFF setup with lammps_interface is generated using either option
                 use_pdlp (bool, optionl): defaults to False, if True use dump_pdlp (must be compiled)
                 reaxff (str, optional): defaults to "cho". name of the reaxff force field file (ffiled.reax.<name>) to be used if FF=="ReaxFF" 
+                kspace (bool): defaults to True. If True, use kspace methods to compute the electrostatic interactions
+                kspace_style (str), defaults to "ewald": The method to be used if kspace == True. For now, try with "ewald" or "pppm" (https://lammps.sandia.gov/doc/kspace_style.html)
+                kspace_prec (float), defaults to 1e-6: accuracy setting for the kspace method (https://lammps.sandia.gov/doc/kspace_style.html)
         """
         self.timer.start("setup")
         # put all known kwargs into self.control
@@ -243,10 +255,10 @@ class pylmps(mpiobject):
 #        cmdargs = ['-log', logfile]
 #        if screen == False: cmdargs+=['-screen', 'none']
 #        self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
-
         # assert settings
         assert self.control["origin"] in ["zero", "center"]
-
+        self.control['kspace_style'] = kspace_style
+        self.control['kspace'] = kspace
         # depending on what type of input is given a setup will be done
         # the default is to load an mfpx file and assign from MOF+ (using force field MOF-FF)
         # if par is given or ff="file" we use mfpx/ric/par
@@ -305,7 +317,7 @@ class pylmps(mpiobject):
             self.mol.bcond = bcond
             # now generate the converter
             self.timer.start("init ff2lammps")
-            self.ff2lmp = ff2lammps.ff2lammps(self.mol)
+            self.ff2lmp = ff2lammps.ff2lammps(self.mol,print_timer=self.print_to_screen)
             self.timer.stop()
             # adjust the settings
             if self.control["oop_umbrella"]:
@@ -313,6 +325,10 @@ class pylmps(mpiobject):
                 self.ff2lmp.setting("use_improper_umbrella_harmonic", True)
             if self.control["kspace_gewald"] != 0.0:
                 self.ff2lmp.setting("kspace_gewald", self.control["kspace_gewald"])
+            if 'kspace_method' in self.control:
+                self.ff2lmp.setting("kspace_method", self.control["kspace_method"])
+            if 'kspace_prec' in self.control:
+                self.ff2lmp.setting("kspace_prec", self.control["kspace_prec"])
             if 'cutoff' in self.control:
                 self.ff2lmp.setting("cutoff", self.control["cutoff"])
             if self.control['cutoff_coul'] is not None:
@@ -323,7 +339,10 @@ class pylmps(mpiobject):
         if self.use_uff:
             self.setup_uff(uff)
         # now converter is in place .. transfer settings
-        self.ff2lmp.setting("origin", self.control["origin"])
+        try:
+            self.ff2lmp.setting("origin", self.control["origin"])
+        except:
+            pass
         if local:
             self.rundir=self.start_dir
         else:
@@ -353,7 +372,7 @@ class pylmps(mpiobject):
             # in this subroutine lamps commands are issued to read the data file and strat up (instead of reading a lammps input file)
             self.setup_reaxff()
             self.timer.stop()
-        else:
+        elif self.use_uff==False:
             # before writing output we can adjust the settings in ff2lmp
             # TBI
             self.timer.start("write data")
@@ -365,6 +384,8 @@ class pylmps(mpiobject):
             self.timer.start("lammps read input")
             self.lmps.file(self.inp_file)
             self.timer.stop()
+        else:
+            self.lmps.file(self.inp_file) # for UFF setup
         os.chdir(self.start_dir)
         # connect variables for extracting
         for e in self.evars:
@@ -406,7 +427,7 @@ class pylmps(mpiobject):
         # set the flag
         self.is_setup = True
         # report timing
-        if self.is_master:
+        if self.is_master and self.print_to_screen:
             self.timer.write()
         if not self.use_uff and not self.use_reaxff:
             self.ff2lmp.report_timer()
@@ -580,7 +601,13 @@ class pylmps(mpiobject):
     def set_logger(self, default = 'none'):
         self.lmps.command("log %s" % default)
         return
-        
+
+    def pprint(self, *args, **kwargs):
+        """Parallel print function"""
+        if self.is_master and self.print_to_screen:
+            __builtin__.print(*args, file=self.out, **kwargs)
+            self.out.flush()
+
     def calc_energy(self, init=False):
         if init:
             self.lmps.command("run 0 pre yes post no")
@@ -706,7 +733,7 @@ class pylmps(mpiobject):
         #if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
         if self.bcond <= 2:
             cd = cell.diagonal()
-            if ((self.bcond == 1) and (numpy.var(cd) > 1e-6)): # check if that is a cubic cell, raise error if not!
+            if ((self.bcond == 1) and (np.var(cd) > 1e-6)): # check if that is a cubic cell, raise error if not!
                 raise ValueError('the cell to be set is not a cubic cell,diagonals: '+str(cd)) 
             if cell_only:
                 self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f" % tuple(cd))

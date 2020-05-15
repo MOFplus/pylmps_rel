@@ -34,7 +34,7 @@ from .util import rotate_cell
 
 class ff2lammps(base):
    
-    def __init__(self, mol,setup_FF=True, reax=False):
+    def __init__(self, mol,setup_FF=True, reax=False, print_timer=True):
         """
         setup system and get parameter 
         
@@ -52,6 +52,7 @@ class ff2lammps(base):
         # generate a timer
         self.timer = Timer(name = "ff2lammps")
         self.timer.start("init")
+        self.print_timer = print_timer
         # generate the force field
         if setup_FF != True:
             return
@@ -655,6 +656,7 @@ class ff2lammps(base):
         if self._mol.bcond > 2:
             f.write('box tilt large\n')
         f.write("read_data %s\n\n" % self.data_filename)
+        #f.write('change_box all boundary s s s\n')
         f.write("neighbor 2.0 bin\n\n")
         # extra header
         if header:
@@ -864,6 +866,7 @@ class ff2lammps(base):
 
     def report_timer(self):
         if self.mpi_rank == 0:
-            self.timer.write()
+            if self.print_timer is True:
+                self.timer.write()
 
     
