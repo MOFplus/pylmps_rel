@@ -147,7 +147,7 @@ class pylmps(mpiobject):
         
         Args:
             rtype (string): type of restraint (bnd, ang, dih)
-            atoms (tuple of int): atom indices
+            atoms (tuple of int): atom indices (pylmps counting from 0!!!!)
             params (tuple/list of floats): force cont, ref value, optional mult for dih
             growK (bool, optional): growing K from zero in next MDrun. Defaults to False.
         """
@@ -159,6 +159,7 @@ class pylmps(mpiobject):
         else:
             assert len(params) == 2 
         params = list(params) + [growK]
+        atoms = tuple(atoms)
         self.restraints[atoms] = params
         self.use_restraints = True
         return
@@ -181,7 +182,7 @@ class pylmps(mpiobject):
                     kint = 0.0
                 else:
                     kint = kfin
-                rest_string += " bond %d %d %10.3f %10.3f %10.3f" % (r[0], r[1], kint, kfin, r0)
+                rest_string += " bond %d %d %10.3f %10.3f %10.3f" % (r[0]+1, r[1]+1, kint, kfin, r0)
             elif len(r) == 3:
                 a0 = rp[1]
                 kfin = rp[0]
