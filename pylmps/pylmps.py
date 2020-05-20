@@ -268,6 +268,7 @@ class pylmps(mpiobject):
         # if ff is set to "UFF" assignement is done via a modified lammps_interface from peter boyds
         self.use_uff = False
         self.use_reaxff = False
+        self.use_xtb = False
         if ff == "UFF":
             self.pprint("USING UFF SETUP!! EXPERIMENTAL!!")
             self.use_uff = True
@@ -280,6 +281,10 @@ class pylmps(mpiobject):
                 self.enames.remove(en)
             self.enames = ["reax_bond"]+self.enames
             self.evars["reax_bond"] = "evdwl"
+        if ff == "xTB":
+            self.use_xtb = True
+            for en in ("Coulomb", "vdW", "CoulPBC", "bond", "angle", "oop", "torsion"):
+                self.enames.remove(en)
         # set the pdlp filename
         if pdlp is None:
             self.pdlpname = self.start_dir + self.name + ".pdlp"
@@ -305,7 +310,7 @@ class pylmps(mpiobject):
         # get the forcefield if this is not done already (if addon is there assume params are exisiting .. TBI a flag in ff addon to indicate that params are set up)
         self.data_file = self.name+".data"
         self.inp_file  = self.name+".in"
-        if not self.use_uff and not self.use_reaxff:
+        if not self.use_uff and not self.use_reaxff and not self.use_xtb:
             if not "ff" in self.mol.loaded_addons:
                 self.mol.addon("ff")
                 if par or ff=="file":
@@ -333,7 +338,7 @@ class pylmps(mpiobject):
                 self.ff2lmp.setting("cutoff", self.control["cutoff"])
             if self.control['cutoff_coul'] is not None:
                 self.ff2lmp.setting('cutoff_coul', self.control['cutoff_coul'])
-        elif self.use_reaxff:
+        elif self.use_reaxff or self.use_xtb:
             # incase of reaxff we need to converter only for the data file
             self.ff2lmp = ff2lammps.ff2lammps(self.mol, reax=True)
         if self.use_uff:
@@ -371,6 +376,14 @@ class pylmps(mpiobject):
             self.timer.start("setup reaxff")
             # in this subroutine lamps commands are issued to read the data file and strat up (instead of reading a lammps input file)
             self.setup_reaxff()
+            self.timer.stop()
+        elif self.use_xtb:
+            self.timer.start("write data")
+            self.ff2lmp.write_data(filename=self.data_file)
+            self.timer.stop()
+            self.timer.start("setup xtb")
+            # in this subroutine lamps commands are issued to read the data file and start up (instead of reading a lammps input file)
+            self.setup_xtb()
             self.timer.stop()
         elif self.use_uff==False:
             # before writing output we can adjust the settings in ff2lmp
@@ -527,6 +540,19 @@ class pylmps(mpiobject):
         self.lmps.command('neigh_modify every 10 delay 0 check no')              
         return
         
+    def setup_xtb(self):
+        """set up the xTB calculation (data file exists)
+        """
+        self.lmps.command('units real')
+        self.lmps.command('atom_style charge')
+        self.lmps.command('atom_modify map hash')
+        if self.mol.bcond > 0:
+            self.lmps.command('boundary p p p')
+        else:
+            self.lmps.command('boundary f f f')
+        self.lmps.command('read_data ' + self.data_file)  
+
+        return
 
     def setup_data(self,name,datafile,inputfile,mfpx=None,mol=None,local=True,logfile='none',bcond=2,kspace = True):
         ''' setup method for use with a lammps data file that contains the system information
@@ -1081,7 +1107,7 @@ class pylmps(mpiobject):
                 self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
             if self.use_uff:
                 plmps_elems = self.uff_plmps_elems
-            elif self.use_reaxff:
+            elif self.use_reaxff or self.use_xtb:
                 plmps_elems = self.ff2lmp.plmps_atypes
             else:
                 plmps_elems = self.ff2lmp.plmps_elems

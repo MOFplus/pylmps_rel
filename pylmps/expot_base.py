@@ -19,8 +19,12 @@ Created on Tue Jul 23 17:26:02 CEST 2019
 import numpy as np
 from molsys import mpiobject
 from lammps import lammps
+#from molsys.util.units import kcalmol, electronvolt, bohr
 from molsys.util.units import kcalmol, electronvolt
 
+bohr = 0.529177249  # remove this when bohr is in molysy.util.units
+
+from .xtb_calc import xtb_calc
 
 class expot_base(mpiobject):
 
@@ -91,6 +95,39 @@ class expot_ase(expot_base):
         # consequently units has to be changed here to kcal/mol
         self.energy = self.atoms.get_potential_energy()*electronvolt/kcalmol
         self.force[self.idx] = self.atoms.get_forces()*electronvolt/kcalmol
+        return self.energy, self.force
+
+
+class expot_xtb(expot_base):
+
+    def __init__(self, mol, gfn_param=0):
+        super(expot_xtb, self).__init__()
+        self.mol = mol
+        self.gfn_param = gfn_param
+        return
+
+    def setup(self,pl):
+        super(expot_xtb, self).setup(pl)
+        self.pprint("An xTB external potential was added!")
+        return
+
+    def calc_energy_force(self):
+
+        # update coordinates and cell
+        self.mol.set_cell(self.cell)
+        self.mol.set_xyz(self.xyz)
+
+        # create calculator and do gfn-xTB calculation
+        gfn = xtb_calc(self.mol,self.gfn_param,pbc=self.mol.periodic)
+
+        results = gfn.calculate()
+
+        #
+        # xTB uses a.u. as units so we need to convert
+        #
+        self.energy  = results['energy'] / kcalmol
+        self.force   = -results['gradient'] / kcalmol / bohr
+
         return self.energy, self.force
 
 
