@@ -17,7 +17,8 @@ except ImportError:
 import numpy as np
 import molsys
 
-from molsys.util.units import bohr
+#from molsys.util.units import bohr
+bohr = 0.529177249  # remove this when bohr is in molysy.util.units
 
 #
 # Class definition for xtb calcaulator

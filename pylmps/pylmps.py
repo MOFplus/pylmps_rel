@@ -556,8 +556,6 @@ class pylmps(mpiobject):
             self.lmps.command('boundary f f f')
         self.lmps.command('read_data ' + self.data_file)  
 
-        #self.lmps.command("pair_style lj/mdf 2.5 3.0")
-        #self.lmps.command("pair_coeff * * 0.0 0.0")
         return
 
     def setup_data(self,name,datafile,inputfile,mfpx=None,mol=None,local=True,logfile='none',bcond=2,kspace = True):
