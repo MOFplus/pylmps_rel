@@ -222,7 +222,7 @@ class pylmps(mpiobject):
 
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False,
-            logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, dim4lamb=False, reaxff="cho", kspace_style='ewald',
+            logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, reaxff="cho", kspace_style='ewald',
             kspace=True,  **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
         
@@ -399,11 +399,6 @@ class pylmps(mpiobject):
         except:
             pass
         #self.natoms = self.lmps.get_natoms()
-        # JK experimental feature 
-        if dim4lamb is True:
-            self.command('fix lamb_fix all property/atom d_lamb ghost yes')
-            for ix in range(self.natoms):
-                self.command('set atom %d d_lamb 1.0' % (ix+1,))
         # setup any registered external potential
         for expot, callback_name in self.external_pot:
             # run the expot's setup with self as an argument --> you have access to all info within the mol object
