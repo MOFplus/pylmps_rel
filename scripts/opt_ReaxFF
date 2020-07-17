@@ -4,31 +4,24 @@
 
 ###########################################################################
 #
-#   Script to generate LAMMPS input for UFF                      
-#
+#   Script to opimize with ReaxFF
 ############################################################################
 
 import sys
-import os
 import pylmps
+import molsys
 
 fname = sys.argv[1]
 name = fname.rsplit('.',1)[0]
-print('name:', name)
 
+m = molsys.mol.from_file(fname)
 
 pl = pylmps.pylmps(name)
+pl.setup(local=True, mol=m, ff="ReaxFF", origin="center", bcond=0)
 
-pl.setup(local=True, ff="MOF-FF")
-
-pl.MIN(0.1)
-
-pl.LATMIN_boxrel(0.1, 0.1)
-pl.LATMIN_sd(0.1, 0.1)
-pl.LATMIN_sd(0.05, 0.05)
 pl.MIN(0.01)
 
-pl.write(name+'_uff4mof_latopt.mfpx')
+pl.write(name+'_opt.xyz')
 
 
 
