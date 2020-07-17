@@ -445,7 +445,7 @@ class pylmps(mpiobject):
         if restart_vel is not False:
             # set velocities that have been read from pdlp file (do not use startup=True in MDinit becasue that will overwrite the velocities again)
             self.set_vel(restart_vel)
-        self.calc_energy()
+        self.calc_energy(init=True)
         self.report_energies()
         self.md_fixes = []
         # Now connect pdlpio (using pdlpio2)
@@ -653,14 +653,14 @@ class pylmps(mpiobject):
             self.lmps.command("run 0 pre yes post no")
         else:
             self.lmps.command("run 1 pre no post no")
-        energy = self.get_eterm("epot")
-        return energy
+        self.energy = self.get_eterm("epot")
+        return self.energy
         
     def calc_energy_force(self, init=False):
         energy = self.calc_energy(init)
         fxyz = self.get_force()
         return energy, fxyz
-        
+
     def get_energy_contribs(self):
         e = {}
         for en in self.enames:
