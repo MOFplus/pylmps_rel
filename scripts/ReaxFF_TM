@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
     pl = pylmps.pylmps("TM")
     pl.setup(local=True, mol=m, ff="ReaxFF", bcond=0)
     e = pl.energy
-    f = pl.get_force()
+    f = -pl.get_force()
     os.chdir(cwd)
     pl.mol.write("gradient", ftype="turbo", gradient=f, energy=e, cycle = 1)
     pl.end()
