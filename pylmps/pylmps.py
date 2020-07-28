@@ -21,6 +21,8 @@ try:
 except ImportError:
     import builtins as __builtin__
 
+from pathlib import Path
+
 import molsys
 from . import ff2lammps
 from .util import rotate_cell
@@ -46,7 +48,7 @@ cellpar  = ["cella", "cellb", "cellc", "cellalpha", "cellbeta", "cellgamma"]
 
 class pylmps(mpiobject):
     
-    def __init__(self, name, logfile = "none", screen = True, mpi_comm=None, out = None):
+    def __init__(self, name, logfile = "none", screen = True, mpi_comm=None, out = None, partitions=None):
         super(pylmps, self).__init__(mpi_comm,out)
         self.name = name
         # get timer
@@ -55,6 +57,23 @@ class pylmps(mpiobject):
         cmdargs = ['-log', logfile]
         if screen == False: cmdargs+=['-screen', 'none']
         self.print_to_screen = screen
+        # handle partitions .. if None do nothing, if not an integer must be given
+        #                      and the number of MPI ranks must be a multiple of partitions
+        self.partitions = partitions
+        if partitions is not None:           
+            procperpart = int(self.mpi_size/partitions)
+            assert procperpart > 0
+            assert self.mpi_size%procperpart == 0
+            self.part_size = procperpart
+            self.part_num  = self.mpi_rank//procperpart
+            self.part_rank = self.mpi_rank%procperpart
+            print ("Using %3d partitions and %3d cores in total. This is partition %d (rank %d)" % \
+                        (partitions, self.mpi_size, self.part_num, self.part_rank))
+            # generate an empty file lammps.in (if it does not exist) to be used as input 
+            #  in case of partitions we need this becasue we can not read from stdin
+            infile = Path("lammps.in")
+            infile.touch()
+            cmdargs += ["-p", "%dx%d" % (partitions, procperpart), "-in", "lammps.in"]
         self.lmps = lammps(cmdargs=cmdargs, comm = self.mpi_comm)
         # handle names of energy contributions
         self.evars = {
@@ -268,6 +287,7 @@ class pylmps(mpiobject):
         # if ff is set to "UFF" assignement is done via a modified lammps_interface from peter boyds
         self.use_uff = False
         self.use_reaxff = False
+        self.use_xtb = False
         if ff == "UFF":
             self.pprint("USING UFF SETUP!! EXPERIMENTAL!!")
             self.use_uff = True
@@ -280,6 +300,10 @@ class pylmps(mpiobject):
                 self.enames.remove(en)
             self.enames = ["reax_bond"]+self.enames
             self.evars["reax_bond"] = "evdwl"
+        if ff == "xTB":
+            self.use_xtb = True
+            for en in ("Coulomb", "vdW", "CoulPBC", "bond", "angle", "oop", "torsion"):
+                self.enames.remove(en)
         # set the pdlp filename
         if pdlp is None:
             self.pdlpname = self.start_dir + self.name + ".pdlp"
@@ -305,7 +329,7 @@ class pylmps(mpiobject):
         # get the forcefield if this is not done already (if addon is there assume params are exisiting .. TBI a flag in ff addon to indicate that params are set up)
         self.data_file = self.name+".data"
         self.inp_file  = self.name+".in"
-        if not self.use_uff and not self.use_reaxff:
+        if not self.use_uff and not self.use_reaxff and not self.use_xtb:
             if not "ff" in self.mol.loaded_addons:
                 self.mol.addon("ff")
                 if par or ff=="file":
@@ -333,7 +357,7 @@ class pylmps(mpiobject):
                 self.ff2lmp.setting("cutoff", self.control["cutoff"])
             if self.control['cutoff_coul'] is not None:
                 self.ff2lmp.setting('cutoff_coul', self.control['cutoff_coul'])
-        elif self.use_reaxff:
+        elif self.use_reaxff or self.use_xtb:
             # incase of reaxff we need to converter only for the data file
             self.ff2lmp = ff2lammps.ff2lammps(self.mol, reax=True)
         if self.use_uff:
@@ -371,6 +395,14 @@ class pylmps(mpiobject):
             self.timer.start("setup reaxff")
             # in this subroutine lamps commands are issued to read the data file and strat up (instead of reading a lammps input file)
             self.setup_reaxff()
+            self.timer.stop()
+        elif self.use_xtb:
+            self.timer.start("write data")
+            self.ff2lmp.write_data(filename=self.data_file)
+            self.timer.stop()
+            self.timer.start("setup xtb")
+            # in this subroutine lamps commands are issued to read the data file and start up (instead of reading a lammps input file)
+            self.setup_xtb()
             self.timer.stop()
         elif self.use_uff==False:
             # before writing output we can adjust the settings in ff2lmp
@@ -413,7 +445,7 @@ class pylmps(mpiobject):
         if restart_vel is not False:
             # set velocities that have been read from pdlp file (do not use startup=True in MDinit becasue that will overwrite the velocities again)
             self.set_vel(restart_vel)
-        self.calc_energy()
+        self.calc_energy(init=True)
         self.report_energies()
         self.md_fixes = []
         # Now connect pdlpio (using pdlpio2)
@@ -527,6 +559,19 @@ class pylmps(mpiobject):
         self.lmps.command('neigh_modify every 10 delay 0 check no')              
         return
         
+    def setup_xtb(self):
+        """set up the xTB calculation (data file exists)
+        """
+        self.lmps.command('units real')
+        self.lmps.command('atom_style charge')
+        self.lmps.command('atom_modify map hash')
+        if self.mol.bcond > 0:
+            self.lmps.command('boundary p p p')
+        else:
+            self.lmps.command('boundary f f f')
+        self.lmps.command('read_data ' + self.data_file)  
+
+        return
 
     def setup_data(self,name,datafile,inputfile,mfpx=None,mol=None,local=True,logfile='none',bcond=2,kspace = True):
         ''' setup method for use with a lammps data file that contains the system information
@@ -608,14 +653,14 @@ class pylmps(mpiobject):
             self.lmps.command("run 0 pre yes post no")
         else:
             self.lmps.command("run 1 pre no post no")
-        energy = self.get_eterm("epot")
-        return energy
+        self.energy = self.get_eterm("epot")
+        return self.energy
         
     def calc_energy_force(self, init=False):
         energy = self.calc_energy(init)
         fxyz = self.get_force()
         return energy, fxyz
-        
+
     def get_energy_contribs(self):
         e = {}
         for en in self.enames:
@@ -775,11 +820,20 @@ class pylmps(mpiobject):
         self.mol.set_xyz(self.get_xyz())
         return
 
-    def write(self,fname,**kwargs):
+    def write(self,fname, partitions=False, **kwargs):
         self.update_mol()
+        if partitions:
+            # write each partition
+            fname = Path(fname)
+            fname = fname.parent / (fname.stem + (".part%d" % self.part_num) + fname.suffix)
+            # HACK : molsysmo.write expects a string ... convert moslys to pathlib
+            fname = str(fname)
+            self.pprint('writing mol to %s' % fname)
+            self.mol.write(fname, rank = self.part_rank, **kwargs)
+            return
         if self.is_master:
             self.pprint('writing mol to %s' % fname)
-            self.mol.write(fname,**kwargs)
+            self.mol.write(fname, **kwargs)
         return 
 
     def write_restart(self,fname='restart.pylmps'):
@@ -858,6 +912,38 @@ class pylmps(mpiobject):
     def end(self):
         # clean up TBI
         return
+
+###################### stuff for using partitions ############################################
+
+    def collect_part_xyz(self, all=True):
+        """collect xyz positions form all partitions in one array on the master node
+
+        can be used as a source for the molsys.traj addon to write all structures to a trajctory file
+        """
+        if self.partitions is None: return
+        # generate emtpy array on master node
+        if self.is_master:
+            xyz_part = np.empty([self.partitions, self.natoms, 3], dtype="float64")
+        else:
+            xyz_part = None
+        # now loop over partitions
+        for p in range(self.partitions):
+            # if i am rank 0 of that partition get my xyz and send it to the master node
+            if self.part_num == p and self.part_rank == 0:
+                pxyz = self.get_xyz()
+                self.mpi_comm.Send([pxyz, MPI.DOUBLE], dest=0)
+            if self.is_master:
+                self.mpi_comm.Recv([xyz_part[p], MPI.DOUBLE], source=p*self.part_size)
+        if all:
+            xyz_part = self.mpi_comm.bcast(xyz_part)
+        return xyz_part
+
+    def write_part(self, fname):
+        xyz_part = self.collect_part_xyz()
+        temp_mol = self.mol.clone()
+        temp_mol.addon("traj", source="array", array=xyz_part)
+        temp_mol.traj.write(fname)
+        return xyz_part # returned for analysis ...
 
 ###################### wrapper to tasks like MIN or MD #######################################
 
@@ -1106,7 +1192,7 @@ class pylmps(mpiobject):
                 self.lmps.command('dump %s all custom %i %s.dump id type element xu yu zu' % (stage+"_dump", tnstep, stage))
             if self.use_uff:
                 plmps_elems = self.uff_plmps_elems
-            elif self.use_reaxff:
+            elif self.use_reaxff or self.use_xtb:
                 plmps_elems = self.ff2lmp.plmps_atypes
             else:
                 plmps_elems = self.ff2lmp.plmps_elems
@@ -1233,10 +1319,47 @@ class pylmps(mpiobject):
         self.unset_restraint()
         return
 
- 
+#### NEB implementation (beta)
 
-
-
+    def NEB(self, final, ftol, nsteps=5000, nsteps_climb=None, Nevery= 100, K=10.0, \
+                    min_style="quickmin", fix_ends=True, group=None):
+        assert min_style in ("quickmin", "fire")
+        assert self.partitions is not None, "To use NEB you need to request partitions when starting up"
+        self.pprint("NEB calculation with %d beads" % self.partitions)
+        # make sure that the final mol object is matching with the existing mol object
+        assert self.mol.natoms == final.natoms
+        assert self.mol.elems == final.elems
+        # settings:
+        if nsteps_climb is None:
+            nsteps_climb = nsteps
+        # interpolate structures between inital an final state in a linear way
+        initl_xyz = self.mol.get_xyz()
+        final_xyz = final.get_xyz()
+        if self.part_num > 0:
+            my_xyz = initl_xyz + (self.part_num/(self.partitions-1)) * (final_xyz - initl_xyz)
+            self.set_xyz(my_xyz)
+        self.write_part(self.name + "_neb_init.xyz")
+        # now set min_style and fix
+        if group is None:
+            neb_group = "all"
+        else:
+            atom_frm = len(group)* " %d"
+            self.lmps.command(("group neb id " + atom_frm) % tuple([i+1 for i in group]))
+            print (("group neb id " + atom_frm) % tuple([i+1 for i in group]))
+            neb_group = "neb"
+        self.lmps.command("fix neb %s neb %10.3f perp 1.0" % (neb_group, K))
+        self.lmps.command("min_style %s" % min_style)
+        # if fix_ends is true set forces of endpoints to zero (note: lammps counts partitions from 1)
+        if fix_ends:
+            self.lmps.command("partition yes 1  fix freeze_init all setforce 0.0 0.0 0.0")
+            self.lmps.command("partition yes %d fix freeze_init all setforce 0.0 0.0 0.0" % self.partitions)
+        # run it
+        self.lmps.command("neb 0.0 %6.3f %d %d %d none" % (ftol, nsteps, nsteps_climb, Nevery))
+        # unfix
+        self.lmps.command("unfix neb")
+        # self.write("neb_final.xyz", partitions=True)
+        self.write_part(self.name + "_neb_final.xyz")
+        return
 
 
 
