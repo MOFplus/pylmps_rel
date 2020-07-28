@@ -782,6 +782,31 @@ class pylmps(mpiobject):
             self.mol.write(fname,**kwargs)
         return 
 
+    def write_restart(self,fname='restart.pylmps'):
+        cell = self.get_cell()
+        xyz = self.get_xyz()
+        vel = self.get_vel()
+        if self.is_master:
+            import pickle
+            d = {'cell': cell,
+                 'xyz': xyz,
+                 'vel': vel}
+            pickle.dump(d,open(fname,'wb'))
+
+    def read_restart(self,fname):
+        """
+            reads a pickled restart written via the read_restart function
+        """
+        import pickle
+        d = pickle.load(open(fname,'rb'))
+        xyz = d['xyz']
+        vel = d['vel']
+        cell = d['cell']
+        self.set_cell(cell,cell_only=True)
+        self.set_xyz(xyz)
+        self.set_vel(vel)
+        return
+
     def calc_numforce(self,delta=0.0001):
         """
         compute numerical force and compare with analytic 
