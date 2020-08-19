@@ -241,7 +241,7 @@ class pylmps(mpiobject):
         return
 
 
-    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False,
+    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False, restart_ff=True
             logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, reaxff="cho", kspace_style='ewald',
             kspace=True,  **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
@@ -317,9 +317,9 @@ class pylmps(mpiobject):
                 # The mol object should be read from the pdlp file
                 self.pdlp = pdlpio2.pdlpio2(self.pdlpname, ffe=self, restart=restart)
                 if restart_vel is True:
-                    self.mol, restart_vel  = self.pdlp.get_mol_from_system(vel=True)
+                    self.mol, restart_vel  = self.pdlp.get_mol_from_system(vel=True, restart_ff=restart_ff)
                 else:
-                    self.mol = self.pdlp.get_mol_from_system() 
+                    self.mol = self.pdlp.get_mol_from_system(restart_ff=restart_ff) 
             else:
                 # we need to make a molsys and read it in
                 self.mol = molsys.mol()
