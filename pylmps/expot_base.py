@@ -100,10 +100,17 @@ class expot_ase(expot_base):
 
 class expot_xtb(expot_base):
 
-    def __init__(self, mol, gfn_param=0):
+    def __init__(self, mol, gfn_param=0,etemp=300.0,accuracy=1.0,uhf=0,verbose=0,maxiter=250):
         super(expot_xtb, self).__init__()
         self.mol = mol
         self.gfn_param = gfn_param
+        self.uhf = uhf
+        self.etemp = etemp
+        self.accuracy = accuracy
+        self.verbose = verbose
+        self.maxiter = maxiter     
+        self.periodic = mol.periodic
+ 
         return
 
     def setup(self,pl):
@@ -113,12 +120,16 @@ class expot_xtb(expot_base):
 
     def calc_energy_force(self):
 
-        # update coordinates and cell
-        self.mol.set_cell(self.cell)
-        self.mol.set_xyz(self.xyz)
-
         # create calculator and do gfn-xTB calculation
-        gfn = xtb_calc(self.mol,self.gfn_param,pbc=self.mol.periodic)
+        gfn = xtb_calc( self.mol
+                      , self.gfn_param
+                      , pbc=self.periodic
+                      , uhf=self.uhf
+                      , accuracy=self.accuracy
+                      , etemp=self.etemp
+                      , verbose=self.verbose
+                      , maxiter=self.maxiter
+                      )
 
         results = gfn.calculate()
 
