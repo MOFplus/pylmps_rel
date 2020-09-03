@@ -836,6 +836,31 @@ class pylmps(mpiobject):
             self.mol.write(fname, **kwargs)
         return 
 
+    def write_restart(self,fname='restart.pylmps'):
+        cell = self.get_cell()
+        xyz = self.get_xyz()
+        vel = self.get_vel()
+        if self.is_master:
+            import pickle
+            d = {'cell': cell,
+                 'xyz': xyz,
+                 'vel': vel}
+            pickle.dump(d,open(fname,'wb'))
+
+    def read_restart(self,fname):
+        """
+            reads a pickled restart written via the read_restart function
+        """
+        import pickle
+        d = pickle.load(open(fname,'rb'))
+        xyz = d['xyz']
+        vel = d['vel']
+        cell = d['cell']
+        self.set_cell(cell,cell_only=True)
+        self.set_xyz(xyz)
+        self.set_vel(vel)
+        return
+
     def calc_numforce(self,delta=0.0001):
         """
         compute numerical force and compare with analytic 
@@ -1296,8 +1321,8 @@ class pylmps(mpiobject):
 
 #### NEB implementation (beta)
 
-    def NEB(self, final, ftol, nsteps=5000, nsteps_climb=None, Nevery= 100, K=10.0, \
-                    min_style="quickmin", fix_ends=True, group=None):
+    def NEB(self, final, ftol, nsteps=5000, nsteps_climb=None, Nevery= 100, K=1.0, \
+                    min_style="quickmin", fix_ends=True, group=None, Kperp=2.0):
         assert min_style in ("quickmin", "fire")
         assert self.partitions is not None, "To use NEB you need to request partitions when starting up"
         self.pprint("NEB calculation with %d beads" % self.partitions)
@@ -1322,7 +1347,7 @@ class pylmps(mpiobject):
             self.lmps.command(("group neb id " + atom_frm) % tuple([i+1 for i in group]))
             print (("group neb id " + atom_frm) % tuple([i+1 for i in group]))
             neb_group = "neb"
-        self.lmps.command("fix neb %s neb %10.3f perp 1.0" % (neb_group, K))
+        self.lmps.command("fix neb %s neb %10.3f perp %10.3f" % (neb_group, K, Kperp))
         self.lmps.command("min_style %s" % min_style)
         # if fix_ends is true set forces of endpoints to zero (note: lammps counts partitions from 1)
         if fix_ends:

@@ -44,7 +44,10 @@ for xx in f.split('\n'):
 #text2 = f.rsplit('Loop ',1)[0].rsplit('Mbytes',1)[-1]
 #data = pd.read_table(StringIO(text),delim_whitespace=True)
 #data2 = pd.read_table(StringIO(text2),delim_whitespace=True)
-data = pd.read_table(StringIO(newtext),delim_whitespace=True)
+# deprecated
+#data = pd.read_table(StringIO(newtext),delim_whitespace=True)
+# end deprecated
+data = pd.read_csv(StringIO(newtext),delim_whitespace=True)
 #if len(data2.keys()) > len(data.keys()):
 #    del text
 #    del data
