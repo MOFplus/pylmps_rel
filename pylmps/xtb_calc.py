@@ -10,7 +10,9 @@ from ctypes import c_int, c_double, c_bool
 #
 try:
     import xtb
-    from xtb.interface import XTBLibrary     # needed to access GFN0Calculation
+    from xtb.interface import Calculator, Param
+    from xtb.libxtb import VERBOSITY_FULL, VERBOSITY_MINIMAL, VERBOSITY_MUTED 
+
 except ImportError:
     print("ImportError: Impossible to load xTB")
 
@@ -31,57 +33,27 @@ class xtb_calc:
                , gfn: int = 0
                , charge: float = 0.0
                , pbc: bool = False
-               , options: dict = None
+               , maxiter: int = 250
+               , etemp: float = 300.0 
+               , accuracy: float = 0.01
+               , uhf: int = 0
+               , verbose = 0
                ):
 
-      xtb0_default_options = {
-       'print_level': 0,
-       'parallel': 0,
-       'accuracy': 1.0,
-       'electronic_temperature': 300.0,
-       'gradient': True,
-       'ccm': True,
-       'solvent': 'none',
-      }
-
-      xtb1_default_options = {
-        'print_level': 2,
-        'parallel': 0,
-        'accuracy': 1.0,
-        'electronic_temperature': 300.0,
-        'gradient': True,
-        'restart': True,
-        'max_iterations': 250,
-        'solvent': 'none',
-        'ccm': True,
-      }
-
-      xtb2_default_options = {
-        'print_level': 2,
-        'parallel': 0,
-        'accuracy': 1.0,
-        'electronic_temperature': 300.0,
-        'gradient': True,
-        'restart': True,
-        'max_iterations': 250,
-        'solvent': 'none',
-        'ccm': True,
-      }
-
-
-      default_options = { 0 : xtb0_default_options
-                        , 1 : xtb1_default_options
-                        , 2 : xtb2_default_options
-                        }
- 
       #
       # Sanity check(s)
       #
       if gfn not in [0,1,2]:
         raise NotImplementedError("Currently only gfn0-xTB, gfn1-xTB and gfn2-xTP supported")
 
-      if gfn != 0 and pbs == True:
-        raise NotImplementedError("Currently PBC only supported for gfn0-xTB")
+      if gfn == 2 and pbc == True:
+        raise NotImplementedError("Currently PBC only supported for gfn0-xTB and gfn1-xTB")
+
+
+      parameter_set = {  0 : Param.GFN0xTB
+                      ,  1 : Param.GFN1xTB
+                      ,  2 : Param.GFN2xTB
+                      }
 
       #
       # Assign class attributes
@@ -90,40 +62,40 @@ class xtb_calc:
       self.mol = mol
       self.pbc = pbc
       self.charge = charge
-      self.lib = XTBLibrary()
-      if options is None:
-         self.options = default_options[gfn] 
-      else:
-         self.options = options  
+      self.param = parameter_set[gfn] 
+      self.etemp = etemp
+      self.maxiter = maxiter
+      self.accuracy = accuracy
+      self.uhf = uhf
+      self.verbose = verbose
 
    def calculate(self):
 
-      # create arguments for xtb interface
-      kwargs = {
-          'natoms': self.mol.get_natoms(),
-          'numbers': np.array(self.mol.get_elems_number(), dtype=c_int),
-          'charge': self.charge,
-          'magnetic_moment': 0,
-          'positions': np.array(self.mol.get_xyz()/bohr, dtype=c_double),  
-          'cell': np.array(self.mol.get_cell()/bohr, dtype=c_double),
-          'pbc': np.full(3, self.pbc, dtype=c_bool),          
-          'options': self.options,
-          'output': "-",
-      }
-
-      # Remove options which do not fit for gfn1 or gfn2
-      if self.gfn != 0:
-         del kwargs['pbc']
-         del kwargs['cell']
-
-      if self.gfn == 0:
-         results = self.lib.GFN0Calculation(**kwargs)
-      elif self.gfn == 1:
-         results = self.lib.GFN1Calculation(**kwargs)
-      elif self.gfn == 2:
-         results = self.lib.GFN2Calculation(**kwargs)
+      numbers   = np.array(self.mol.get_elems_number(), dtype=c_int) 
+      positions = np.array(self.mol.get_xyz()/bohr, dtype=c_double)
+      if self.pbc == True:  
+         cell      = np.array(self.mol.get_cell()/bohr, dtype=c_double)
+         pbc       = np.full(3, True, dtype=c_bool)
       else:
-         raise NotImplementedError("Parameterset not supported")
+         cell = None
+         pbc       = np.full(3, False, dtype=c_bool)
+
+      calc = Calculator(self.param, numbers, positions, self.charge, uhf=self.uhf, lattice=cell, periodic=pbc)
+
+      calc.set_verbosity(self.verbose)
+
+      #
+      # Set user options
+      #
+      calc.set_electronic_temperature(self.etemp)
+      calc.set_max_iterations(self.maxiter)
+      calc.set_accuracy(self.accuracy)
+
+      res = calc.singlepoint()
+
+      results = { 'energy'   : res.get_energy()
+                , 'gradient' : res.get_gradient()
+                }
 
       return results
 

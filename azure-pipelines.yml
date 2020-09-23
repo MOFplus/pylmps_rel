@@ -1,0 +1,16 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- master
+
+pool: pylmps
+
+steps:
+
+- script: |
+    cd tests/generic
+    mpirun -np 2 python3 test_opt_hkust1.py
+  displayName: 'test pylmps MOF-FF opt'
