@@ -1319,6 +1319,66 @@ class pylmps(mpiobject):
         self.unset_restraint()
         return
 
+### Johannes constD stuff
+
+    def get_reciprocal_cell(self):
+        return np.linalg.inv(self.get_cell()).T
+
+    def set_dfield(self,field_vect, field_mask = [True, True, True], 
+                    ref = None, reduced = False):
+        self._use_dfield = True
+        r_cell = self.get_reciprocal_cell()
+        V = self.get_cell_volume()
+        if ref is not None:
+            pol = ref/V
+            d_ref = V*np.dot(r_cell,pol)
+        else:
+            d_ref = np.array([0.,0.,0.])
+        if reduced == False:
+            d = V*np.dot(r_cell,field_vect)
+        else:
+            d = field_vect
+        # set fix
+        d += d_ref
+        # format field vector
+        s = ""
+        for i in range(3):
+            if field_mask[i] == False:
+                s += "NULL "
+            else:
+                s += "%12.6f " % d[i]
+        print(s)
+        # setup polarization lammps variables
+        self.lmps.command("fix initconfig all store/state 0 xu yu zu")
+        self.lmps.command("compute displ all displace/atom")
+        self.lmps.command("variable OmegaPxi atom (c_displ[1]+f_initconfig[1])*q")
+        self.lmps.command("variable OmegaPyi atom (c_displ[2]+f_initconfig[2])*q")
+        self.lmps.command("variable OmegaPzi atom (c_displ[3]+f_initconfig[3])*q")
+        self.lmps.command("compute OmegaPx all reduce sum v_OmegaPxi")
+        self.lmps.command("compute OmegaPy all reduce sum v_OmegaPyi")
+        self.lmps.command("compute OmegaPz all reduce sum v_OmegaPzi")
+        self.add_ename("dfield", "f_dfield")
+        self.lmps.command("fix dfield all dfield %s c_OmegaPx c_OmegaPy c_OmegaPz energy f_dfield" % s)
+        self.lmps.command("fix_modify dfield energy yes")
+        self.lmps.command("fix_modify dfield virial yes")
+        return
+
+ #       for expot, callback_name in self.external_pot:
+ #           # run the expot's setup with self as an argument --> you have access to all info within the mol object
+ #           expot.setup(self)
+ #           fix_id = "expot_"+expot.name
+ #           self.add_ename(expot.name, "f_"+fix_id)
+ #           self.lmps.command("fix %s all python/invoke 1 post_force %s" % (fix_id, callback_name))
+ #           self.lmps.command("fix_modify %s energy yes" % fix_id)
+ #           self.pprint("External Potential %s is set up as fix %s" % (expot.name, fix_id))
+
+    def unset_dfield(self):
+        assert self._use_dfield == True
+        self.lmps.command("unfix Densemble")
+        return
+
+
+
 #### NEB implementation (beta)
 
     def NEB(self, final, ftol, nsteps=5000, nsteps_climb=None, Nevery= 100, K=1.0, \
