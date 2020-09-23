@@ -9,10 +9,8 @@ trigger:
 pool: pylmps
 
 steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
 
 - script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
-  displayName: 'Run a multi-line script'
+    cd tests/generic
+    mpirun -np 2 python3 test_opt_hkust1.py
+  displayName: 'test pylmps MOF-FF opt'
