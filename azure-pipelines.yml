@@ -13,4 +13,4 @@ steps:
 - script: |
     cd tests/generic
     mpirun -np 2 python3 test_opt_hkust1.py
-  displayName: 'test pylmps MOF-FF opt'
+  displayName: 'testing pylmps MOF-FF opt'
