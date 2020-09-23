@@ -326,7 +326,7 @@ class ff2lammps(base):
                 # for reaxff chrg = 0.0 becasue it is set by Qeq
                 #   ind  atype chrg x y z # comment
                 chrg = 0.0
-                f.write("%10d %5d %10.5f %12.6f %12.6f %12.6f\n" % (i+1, atype, chrg, x,y,z))
+                f.write("%10d %5d %12.8f %12.6f %12.6f %12.6f\n" % (i+1, atype, chrg, x,y,z))
         else:
             chargesum = 0.0
             for i in range(self._mol.get_natoms()):
@@ -341,7 +341,7 @@ class ff2lammps(base):
                 chargesum+=chrg
                 x,y,z = xyz[i]
                 #   ind  atype molnumb chrg x y z # comment
-                f.write("%10d %5d %5d %10.5f %12.6f %12.6f %12.6f # %s\n" % (i+1, molnumb, atype, chrg, x,y,z, vdwt))
+                f.write("%10d %5d %5d %12.8f %12.6f %12.6f %12.6f # %s\n" % (i+1, molnumb, atype, chrg, x,y,z, vdwt))
             self.pprint("The total charge of the system is: %12.8f" % chargesum)
         # write bonds
         if len(self.rics["bnd"]) != 0: f.write("\nBonds\n\n")
@@ -417,7 +417,7 @@ class ff2lammps(base):
             molnumb = self._mol.molecules.whichmol[i]+1
             chrgpar    = self.par["cha"][chat]
             chrg = chrgpar[1][0]
-            pstrings.append("set atom %5d charge %12.6f" % (i+1, chrg))
+            pstrings.append("set atom %5d charge %12.8f" % (i+1, chrg))
         return pstrings
 
     def get_charges(self):
