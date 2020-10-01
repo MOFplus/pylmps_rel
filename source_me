@@ -49,21 +49,6 @@ __print $PYLMPSPATH
 export PYTHONPATH=$PYLMPSPATH:$PYTHONPATH
 export PATH=$PYLMPSPATH/scripts:$PATH
 
-#
-# We assume default location for lammps and so on....
-#
-#LAMMPSPATH=/home/$USER/sandbox/lammps/python
-#if [ -d $LAMMPSPATH ]; then 
-#  export PYTHONPATH=LAMMPSPATH:$PYTHONPATH
-#else
-#  echo "Missing lammps installation"
-#  exit 1
-#fi
-#
-#LAMMPSPOT=/home/$USER/sandbox/lammps/potentials
-#if [ -d $LAMMPSPOT ]; then
-#   export REAXFF_FILES=$LAMMPSPOT
-#else
-#  echo "Missing lammps potentials"
-#  exit 1
-#fi
+echo "PATH " $PATH
+echo "PYTHONOATH " $PYTHONPATH
+echo "PYTHON " $(which python)
