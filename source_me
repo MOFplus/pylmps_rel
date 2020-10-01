@@ -46,6 +46,17 @@ export PYLMPSPATH=`pwd`
 __print "Set PATH to pylmps:" 
 __print $PYLMPSPATH
 
+
+export PYTHONPATH=/home/$USER/sandbox/molsys:$PYTHONPATH
+export PATH=/home/$USER/sandbox/molsys/scripts:$PATH
+
+export PYTHONPATH=/home/$USER/sandbox/lammps/python:$PYTHONPATH
+export REAXFF_FILES=/home/$USER/sandbox/lammps/potentials
+
+export PYTHONPATH=/home/$USER/sandbox/pylmps:$PYTHONPATH
+export PATH=/home/$USER/sandbox/pylmps/scripts:$PATH
+
+
 export PYTHONPATH=$PYLMPSPATH:$PYTHONPATH
 export PATH=$PYLMPSPATH/scripts:$PATH
 
