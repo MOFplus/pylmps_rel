@@ -11,7 +11,7 @@ pool: pylmps
 steps:
 
 - script: |
-    conda activate molsys
+    source ~/.bashrc
     source source_me 
     cd tests/generic
     mpirun -np 2 python3 test_opt_hkust1.py
