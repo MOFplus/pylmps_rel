@@ -120,15 +120,8 @@ class expot_xtb(expot_base):
 
     def setup(self,pl):
         super(expot_xtb, self).setup(pl)
-        self.pprint("An xTB external potential was added!")
-        return
-
-    def calc_energy_force(self):
-
-        self.mol.set_xyz(self.xyz)
-
         # create calculator and do gfn-xTB calculation
-        gfn = xtb_calc( self.mol
+        self.gfn = xtb_calc( self.mol
                       , self.gfn_param
                       , pbc=self.periodic
                       , uhf=self.uhf
@@ -137,9 +130,11 @@ class expot_xtb(expot_base):
                       , verbose=self.verbose
                       , maxiter=self.maxiter
                       )
+        self.pprint("An xTB external potential was added")
+        return
 
-        results = gfn.calculate()
-
+    def calc_energy_force(self):
+        results = self.gfn.calculate(self.xyz, self.cell)
         #
         # xTB uses a.u. as units so we need to convert
         #

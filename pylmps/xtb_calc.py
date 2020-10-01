@@ -54,7 +54,6 @@ class xtb_calc:
                       ,  1 : Param.GFN1xTB
                       ,  2 : Param.GFN2xTB
                       }
-
       #
       # Assign class attributes
       #
@@ -69,29 +68,36 @@ class xtb_calc:
       self.uhf = uhf
       self.verbose = verbose
 
-   def calculate(self):
+      # set up things that do not change during the calcultion
+      self.numbers   = np.array(self.mol.get_elems_number(), dtype=c_int)
+      self.calc = None
+      return
 
-      numbers   = np.array(self.mol.get_elems_number(), dtype=c_int) 
-      positions = np.array(self.mol.get_xyz()/bohr, dtype=c_double)
+
+   def calculate(self, xyz, cell):
+      positions = np.array(xyz/bohr, dtype=c_double)
       if self.pbc == True:  
-         cell      = np.array(self.mol.get_cell()/bohr, dtype=c_double)
+         cell      = np.array(cell/bohr, dtype=c_double)
          pbc       = np.full(3, True, dtype=c_bool)
       else:
          cell = None
          pbc       = np.full(3, False, dtype=c_bool)
 
-      calc = Calculator(self.param, numbers, positions, self.charge, uhf=self.uhf, lattice=cell, periodic=pbc)
+      if self.calc is None:
+         # make calc when it does not exist (first interation)
+         self.calc = Calculator(self.param, self.numbers, positions, self.charge, uhf=self.uhf, lattice=cell, periodic=pbc)
+         self.calc.set_verbosity(self.verbose)
+         #
+         # Set user options
+         #
+         self.calc.set_electronic_temperature(self.etemp)
+         self.calc.set_max_iterations(self.maxiter)
+         self.calc.set_accuracy(self.accuracy)
+      else:
+         # update calc (molecule obejct under the hood)
+         self.calc.update(positions, lattice=cell)
 
-      calc.set_verbosity(self.verbose)
-
-      #
-      # Set user options
-      #
-      calc.set_electronic_temperature(self.etemp)
-      calc.set_max_iterations(self.maxiter)
-      calc.set_accuracy(self.accuracy)
-
-      res = calc.singlepoint()
+      res = self.calc.singlepoint()
 
       results = { 'energy'   : res.get_energy()
                 , 'gradient' : res.get_gradient()
