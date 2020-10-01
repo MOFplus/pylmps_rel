@@ -120,6 +120,8 @@ class expot_xtb(expot_base):
 
     def calc_energy_force(self):
 
+        self.mol.set_xyz(self.xyz)
+
         # create calculator and do gfn-xTB calculation
         gfn = xtb_calc( self.mol
                       , self.gfn_param
