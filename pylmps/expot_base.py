@@ -67,6 +67,10 @@ class expot_base(mpiobject):
         # distribute the forces back
         lmps.scatter_atoms("f", 2, 3, np.ctypeslib.as_ctypes(self.force))
         # return the energy
+        #print ("DEBUGDBEUG ... this is expot callback")
+        #print ("energy: ", self.energy)
+        #print ("force: ")
+        #print (self.force)
         return self.energy
 
 
@@ -77,6 +81,7 @@ class expot_ase(expot_base):
         super(expot_ase, self).__init__()
         self.atoms = atoms
         self.idx = idx
+        self.name = "ase"
         return
 
     def setup(self,pl):
@@ -110,7 +115,7 @@ class expot_xtb(expot_base):
         self.verbose = verbose
         self.maxiter = maxiter     
         self.periodic = mol.periodic
- 
+        self.name = "xtb"
         return
 
     def setup(self,pl):
