@@ -47,19 +47,23 @@ __print "Set PATH to pylmps:"
 __print $PYLMPSPATH
 
 
+__print "Set PATH to molsys:" 
 export PYTHONPATH=/home/$USER/sandbox/molsys:$PYTHONPATH
 export PATH=/home/$USER/sandbox/molsys/scripts:$PATH
 
+__print "Set PYTHONPATH to lammps interface"
 export PYTHONPATH=/home/$USER/sandbox/lammps/python:$PYTHONPATH
 export REAXFF_FILES=/home/$USER/sandbox/lammps/potentials
-
-export PYTHONPATH=/home/$USER/sandbox/pylmps:$PYTHONPATH
-export PATH=/home/$USER/sandbox/pylmps/scripts:$PATH
-
 
 export PYTHONPATH=$PYLMPSPATH:$PYTHONPATH
 export PATH=$PYLMPSPATH/scripts:$PATH
 
-echo "PATH " $PATH
-echo "PYTHONOATH " $PYTHONPATH
-echo "PYTHON " $(which python)
+__print "Environment settings:"
+__print "----------------------"
+__print "PATH       :" $PATH
+__print "PYTHONPATH :" $PYTHONPATH
+__print "PYTHON     :" $(which python)
+__print "AGENT      :" $(whoami)
+__print "MACHINE    :" $(hostname)
+
+
