@@ -16,3 +16,8 @@ steps:
     mpirun -np 2 python3 test_opt_hkust1.py
   displayName: 'testing pylmps MOF-FF opt'
 
+- script: |
+    source source_me 
+    cd tests/xtb
+    python3 test.py
+  displayName: 'testing pylmps GFN1-xTB opt'
