@@ -43,8 +43,8 @@ class xtb_calc:
       #
       # Sanity check(s)
       #
-      if gfn not in [0,1,2]:
-        raise NotImplementedError("Currently only gfn0-xTB, gfn1-xTB and gfn2-xTP supported")
+      if gfn not in [-1,0,1,2]:
+        raise NotImplementedError("Currently only gfn-FF, gfn0-xTB, gfn1-xTB and gfn2-xTP supported")
 
       if gfn == 2 and pbc == True:
         raise NotImplementedError("Currently PBC only supported for gfn0-xTB and gfn1-xTB")
@@ -53,6 +53,7 @@ class xtb_calc:
       parameter_set = {  0 : Param.GFN0xTB
                       ,  1 : Param.GFN1xTB
                       ,  2 : Param.GFN2xTB
+                      , -1 : Param.GFNFF
                       }
       #
       # Assign class attributes
