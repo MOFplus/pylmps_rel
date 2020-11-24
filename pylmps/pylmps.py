@@ -778,7 +778,7 @@ class pylmps(mpiobject):
         #if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
         #if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
         cd = cell.diagonal()
-        if self.control["origin"] = "zero":
+        if self.control["origin"] == "zero":
             cd_l = np.zeros([3])
             cd_h = cd
         else:
