@@ -784,7 +784,7 @@ class pylmps(mpiobject):
         else:
             cd_l = -cd*0.5
             cd_h = cd*0.5
-        comm = "change_box all x final %f %f y final %f %f z final %f %f" % (cd_l[0], cd_h[0, cd_l[1], cd_h[1], cd_l[2], cd_h[2])
+        comm = "change_box all x final %f %f y final %f %f z final %f %f" % (cd_l[0], cd_h[0], cd_l[1], cd_h[1], cd_l[2], cd_h[2])
         if self.bcond <= 2:
             if ((self.bcond == 1) and (np.var(cd) > 1e-6)): # check if that is a cubic cell, raise error if not!
                 raise ValueError('the cell to be set is not a cubic cell,diagonals: '+str(cd))
@@ -793,7 +793,7 @@ class pylmps(mpiobject):
             # cd = tuple(ff2lammps.ff2lammps.cell2tilts(cell)) -> old code refers to ff2lmapps .. unlcear!
             comm += " xy final %f xz final %f yz final %f" % cd_tilts
         else:
-            raise ValueError("Unknown bcond %d" self.bcond)
+            raise ValueError("Unknown bcond %d" % self.bcond)
         if not cell_only:
             comm += " remap"
         self.lmps.command(comm)
