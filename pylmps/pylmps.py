@@ -766,29 +766,47 @@ class pylmps(mpiobject):
         return cell
 
     def set_cell(self, cell, cell_only=False):
+        """set the cell vectors
+
+        Args:
+            cell (numpy array): cell vectors
+            cell_only (bool, optional): if True change only the cell params but do not change the systems coords. Defaults to False
+        """
         # we have to check here if the box is correctly rotated in the triclinic case
-        cell = rotate_cell(cell)
+        cell = rotate_cell(cell) 
         #if abs(cell[0,1]) > 10e-14: raise IOError("Cell is not properly rotated")
         #if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
         #if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
+        cd = cell.diagonal()
+        if self.control["origin"] = "zero":
+            cd_l = np.zeros([3])
+            cd_h = cd
+        else:
+            cd_l = -cd*0.5
+            cd_h = cd*0.5
+        comm = "change_box all x final %f %f y final %f %f z final %f %f" % (cd_l[0], cd_h[0, cd_l[1], cd_h[1], cd_l[2], cd_h[2])
         if self.bcond <= 2:
-            cd = cell.diagonal()
             if ((self.bcond == 1) and (np.var(cd) > 1e-6)): # check if that is a cubic cell, raise error if not!
-                raise ValueError('the cell to be set is not a cubic cell,diagonals: '+str(cd)) 
-            if cell_only:
-                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f" % tuple(cd))
-            else:
-                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f remap" % tuple(cd))
-            pass # TBI
+                raise ValueError('the cell to be set is not a cubic cell,diagonals: '+str(cd))
         elif self.bcond == 3:
-            cd = tuple(ff2lammps.ff2lammps.cell2tilts(cell))
-            if cell_only:
-                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f" % cd)
-            else:
-                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f remap" % cd)
+            cd_tilts = (cell[1,0],cell[2,0],cell[2,1])
+            # cd = tuple(ff2lammps.ff2lammps.cell2tilts(cell)) -> old code refers to ff2lmapps .. unlcear!
+            comm += " xy final %f xz final %f yz final %f" % cd_tilts
+        else:
+            raise ValueError("Unknown bcond %d" self.bcond)
+        if not cell_only:
+            comm += " remap"
+        self.lmps.command(comm)
         return
 
     def get_cellforce(self):
+        """get the forces on the cell vectors
+
+        TBI: improve handling for triclinic systems .. keep lower trianlge structure from the start
+
+        Returns:
+            numpy array: cell force
+        """
         cell    = self.get_cell()
         # we need to get the stress tensor times the volume here (in ananlogy to get_stress in pydlpoly)
         stress  = self.get_stress_tensor()*self.get_cell_volume()
