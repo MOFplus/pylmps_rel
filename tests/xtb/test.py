@@ -12,7 +12,11 @@ pl = pylmps.pylmps("opt")
 # instantiate the external potential expot_xtb
 
 # GFN1 calculatuion (muted verbose=0, set to 2 for full output)
-ep = pylmps.expot_xtb(mol,1,verbose=0,maxiter=1000)
+gfn = 1 #  0: GFN0
+        #  1: GFN1
+        #  2: GFN2
+        # -1: GFN-FF
+ep = pylmps.expot_xtb(mol,gfn,verbose=0,maxiter=1000)
 
 # we need to register the objects callback as a global function
 callback = ep.callback
