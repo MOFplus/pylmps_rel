@@ -81,12 +81,17 @@ make yes-MOLECULE
 make yes-USER-H5MD
 make yes-USER-REAXC
 make yes-PYTHON
+make yes-REPLICA
 
 #  --- by default we install the colvars package. very useful!
 
 cd ../lib/colvars/
 make -f Makefile.g++
 cd ../../src/
+
+# For using with python3 you have to copy the Makefile.lammps.python3 to Makefile.lammps in /lib/python
+# In case of using python3.8 or higher you need to add the option --embed for python3-config in addition to --ldflags
+# in the line where python_SYSLIB is defined (This is important especially for the conda environment, where python3.8 is used)
 
 # compile as shared lib 
 make mode=shlib mpi
@@ -95,7 +100,6 @@ ln -s ../src/liblammps.so .
 ln -s ../src/liblammps_mpi.so .
 cd ..
 ```
-For using with python3 you have to copy the Makefile.lammps.python3 to Makefile.lammps in /lib/python.
 
 ### Setup PYTHONPATH
 
