@@ -65,6 +65,9 @@ make -f Makefile.h5cc
 # Mine looks like this (UBUNTU based MINT):
 #  h5md_SYSINC = -I/usr/include/hdf5/serial
 #  h5md_SYSLIB = -L/usr/lib/x86_64-linux-gnu/hdf5/serial/ -lhdf5
+# For a typical conda environment in your local directory (repalce <USER> by your username)
+#  h5md_SYSINC = -I/home/<USER>/conda/envs/molsys/include
+#  h5md_SYSLIB = -L/home/<USER>/conda/envs/molsys/lib -lhdf5
 #  the first entry points to the leader file (try "locate hdf5.h" to find it)
 #  the second entry points to the lib (try "locate libhdf5")
 
