@@ -129,6 +129,9 @@ class ff2lammps(base):
             self.par_types[r] = par_types
             self.npar[r] = i-1
             self.nric[r] = iric
+        # map additional nonbonded types
+        self.par["vdwpr"] = self._mol.ff.par["vdwpr"]
+        self.par["chapr"] = self._mol.ff.par["chapr"]
         # we need to verify that the vdw types and the charge types match because the sigma needs to be in the pair_coeff for lammps
         # thus we build our own atomtypes list combining vdw and cha and use the mol.ff.vdwdata as a source for the combined vdw params
         # but add the combined 1.0/sigma_ij here
@@ -328,21 +331,19 @@ class ff2lammps(base):
                 chrg = 0.0
                 f.write("%10d %5d %12.8f %12.6f %12.6f %12.6f\n" % (i+1, atype, chrg, x,y,z))
         else:
-            chargesum = 0.0
+            charges = self.get_charges()
+            # write atoms with charges
             for i in range(self._mol.get_natoms()):
                 vdwt  = self.parind["vdw"][i][0]
                 chat  = self.parind["cha"][i][0]
                 at = vdwt+"/"+chat
                 atype = self.plmps_atypes.index(at)+1
                 molnumb = self._mol.molecules.mgroups["molecules"].whichmol[i]+1
-                chrgpar    = self.par["cha"][chat]
-                assert chrgpar[0] == "gaussian", "Only Gaussian type charges supported"
-                chrg = chrgpar[1][0]
-                chargesum+=chrg
                 x,y,z = xyz[i]
+                chrg  = charges[i]
                 #   ind  atype molnumb chrg x y z # comment
                 f.write("%10d %5d %5d %12.8f %12.6f %12.6f %12.6f # %s\n" % (i+1, molnumb, atype, chrg, x,y,z, vdwt))
-            self.pprint("The total charge of the system is: %12.8f" % chargesum)
+            self.pprint("The total charge of the system is: %12.8f" % charges.sum())
         # write bonds
         if len(self.rics["bnd"]) != 0: f.write("\nBonds\n\n")
         for i in range(len(self.rics["bnd"])):
@@ -407,33 +408,44 @@ class ff2lammps(base):
                     for p in pstrings: lmps.lmps.command(p)
         return
 
+    # RS (Nov 2020) revision of charges -> add delta charges
+    #      works for write_data where not just chrges are printed
+    #      the follwoing routines are for fitting and only set charges 
+    #      some obsolete code is reomved
     def charge_formatter(self):
         pstrings = []
+        charges = self.get_charges()
         for i in range(self._mol.get_natoms()):
-            vdwt  = self.parind["vdw"][i][0]
-            chat  = self.parind["cha"][i][0]
-            at = vdwt+"/"+chat
-            atype = self.plmps_atypes.index(at)+1
-            molnumb = self._mol.molecules.whichmol[i]+1
-            chrgpar    = self.par["cha"][chat]
-            chrg = chrgpar[1][0]
-            pstrings.append("set atom %5d charge %12.8f" % (i+1, chrg))
+            pstrings.append("set atom %5d charge %12.8f" % (i+1, charges[i]))
         return pstrings
 
     def get_charges(self):
-        charges = []
+        charges = np.zeros(self._mol.get_natoms()) # we need to compute the array first and only then we can write it out
+        # set up the delta charges dictionary
+        delta_chrg = {}
+        for k in self.par["chapr"]:
+            if self.par["chapr"][k][0] == "delta":
+                delta = self.par["chapr"][k][1][0]
+                at1, at2 = k.split("(")[1].split(")")[0].split(",")
+                delta_chrg[at1] = (at2, delta)
+        # compute charges
+        conn = self._mol.get_conn()
         for i in range(self._mol.get_natoms()):
-            vdwt  = self.parind["vdw"][i][0]
             chat  = self.parind["cha"][i][0]
-            at = vdwt+"/"+chat
-            atype = self.plmps_atypes.index(at)+1
-            molnumb = self._mol.molecules.whichmol[i]+1
             chrgpar    = self.par["cha"][chat]
-            chrg = chrgpar[1][0]
-            charges.append(chrg)
-        return np.array(charges)
-
-
+            assert chrgpar[0] == "gaussian", "Only Gaussian type charges supported"   # also "point" should work -> To be checked
+            charges[i] += chrgpar[1][0]
+            # check if chat in delta_chrg
+            chat_red = chat.split("(")[1].split(")")[0]
+            if chat_red in delta_chrg:
+                at2, delta = delta_chrg[chat_red]
+                # chek if any of the bonded atoms is of type at2
+                for j in conn[i]:
+                    if repr(self._mol.ff.ric.aftypes[j]) == at2:   # Note: aftypes are aftype objects and not strings .. we call repr() to get the string
+                        # print ("atom %s connected to atom %s ..apply delta %f" % (chat_red, at2, delta))
+                        charges[i] += delta
+                        charges[j] -= delta
+        return charges
 
 
     def pairterm_formatter(self,comment = False):
