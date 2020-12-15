@@ -11,7 +11,7 @@
 import molsys.stow as stow
 import molsys
 import pylmps
-import hessutils
+from ff_gen.utils import hessutils
 import shutil
 import numpy
 import sys
@@ -23,9 +23,9 @@ mfpx = sys.argv[1]
 name = mfpx.rsplit('.',1)[0]
 
 if len(sys.argv) > 2:
-    optimize=True
+    optimize=float(sys.argv[2])
 else:
-    optimize=False
+    optimize=None
 
 
 m = molsys.mol.from_file(mfpx)
@@ -38,13 +38,17 @@ except:
     m.ff.read(name,fit=True)
     
 pl = pylmps.pylmps(name)
-pl.setup(mol=m)
+kspace = True
+if m.bcond == 0:
+    # this is not perdiodic , switch off kspace
+    kspace = False
+pl.setup(mol=m, kspace=kspace, bcond=m.bcond)
 
-if optimize == True:
+if optimize != None:
     ###  tbi: run optimization
-    pass
+    pl.MIN(optimize)
 
-hess = hessutils.doublehessian(pl);
+hess = hessutils.doublehessian(pl)
 hessian = hess()
 hu = hessutils.hessutils(pl.get_xyz(),hessian,pl.get_elements())
 hu.write_molden_input(name+'.freq')
