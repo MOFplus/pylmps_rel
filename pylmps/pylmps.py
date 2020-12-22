@@ -1139,7 +1139,7 @@ class pylmps(mpiobject):
     def MD_init(self, stage, T = None, p=None, startup = False, startup_seed = 42, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=[], rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
             colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False, dump_thermo=True, 
-            wrap = True):
+            wrap = True, additional_thermo_output=[]):
         """Defines the MD settings
         
         MD_init has to be called before a MD simulation can be performed, the ensemble along with the
@@ -1167,6 +1167,7 @@ class pylmps(mpiobject):
             dump (bool, optional): Defaults to True: defines if an ASCII dump is written
             append (bool, optional): Defaults to False: if True data is appended to the exisiting stage (TBI)
             dump_thermo (bool, optional): defaults to True: if True dump the thermo data written to the log file also to the pdlp dump
+            additional_thermo_output (list, optional): defaults to []: if non-empty, add the thermo columns to the output
         
         Returns:
             None: None
@@ -1279,6 +1280,7 @@ class pylmps(mpiobject):
                                       (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"], self.nbondsmax))
                 self.md_fixes.append("reaxc_bnd")
         # now define what scalar values should be written to the log file
+        thermo_style += additional_thermo_output
         thermo_style += ["spcpu"]
         thermo_style_string = "thermo_style custom step " + " ".join(thermo_style)
         self.lmps.command(thermo_style_string)
