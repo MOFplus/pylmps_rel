@@ -124,6 +124,7 @@ class pylmps(mpiobject):
             "force"  : self.get_force,\
             "cell"   : self.get_cell,\
             "charges": self.get_charge,\
+            "stress ": self.get_stress_tensor,\
         }
         return
 
