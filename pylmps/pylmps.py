@@ -241,7 +241,7 @@ class pylmps(mpiobject):
         return
 
 
-    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False, restart_ff=True,
+    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False, restart_ff=True, pressure_bath_atype=None,
             logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, reaxff="cho", kspace_style='ewald',
             kspace=True,  **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
@@ -326,6 +326,11 @@ class pylmps(mpiobject):
                 if mfpx == None:
                     mfpx = self.name + ".mfpx"
                 self.mol.read(mfpx)
+
+        # set pressure bath atype to avoid attractive interactions between pressure bath and solute
+        if pressure_bath_atype != None:
+            self.mol.ff.settings["pressure_bath_atype"] = pressure_bath_atype
+
         # get the forcefield if this is not done already (if addon is there assume params are exisiting .. TBI a flag in ff addon to indicate that params are set up)
         self.data_file = self.name+".data"
         self.inp_file  = self.name+".in"

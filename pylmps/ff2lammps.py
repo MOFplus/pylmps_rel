@@ -473,6 +473,14 @@ class ff2lammps(base):
                         B = self._settings["vdw_b"]/r0
                         C = eps*self._settings["vdw_c"]*r0**6
                         D = 6.0*(self._settings["vdw_dampfact"]*r0)**14
+                        if "pressure_bath_atype" in self._settings.keys():
+                            a1 = ati.count(self._settings["pressure_bath_atype"]) > 0
+                            a2 = atj.count(self._settings["pressure_bath_atype"]) > 0
+                            if (a1 and not a2) or (not a1 and a2):
+                                print ("DEBUG : one is a pressure bath atom %s %s" % (ati, atj))
+                                C = 0.0
+                                D = 0.0
+
                         #pstrings.append(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s) % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))
                         #f.write(("pair_coeff %5d %5d " + self.parf(5) + "   # %s <--> %s\n") % (i+1,j+1, A, B, C, D, alpha_ij, ati, atj))
                     elif vdw[0] == "buck":
