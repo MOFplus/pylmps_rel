@@ -124,6 +124,7 @@ class pylmps(mpiobject):
             "force"  : self.get_force,\
             "cell"   : self.get_cell,\
             "charges": self.get_charge,\
+            "stress" : self.get_stress_tensor,\
         }
         return
 
@@ -241,7 +242,7 @@ class pylmps(mpiobject):
         return
 
 
-    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False, restart_ff=True,
+    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False, restart_ff=True, pressure_bath_atype=None,
             logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, reaxff="cho", kspace_style='ewald',
             kspace=True,  **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
@@ -326,6 +327,11 @@ class pylmps(mpiobject):
                 if mfpx == None:
                     mfpx = self.name + ".mfpx"
                 self.mol.read(mfpx)
+
+        # set pressure bath atype to avoid attractive interactions between pressure bath and solute
+        if pressure_bath_atype != None:
+            self.mol.ff.settings["pressure_bath_atype"] = pressure_bath_atype
+
         # get the forcefield if this is not done already (if addon is there assume params are exisiting .. TBI a flag in ff addon to indicate that params are set up)
         self.data_file = self.name+".data"
         self.inp_file  = self.name+".in"
@@ -766,29 +772,47 @@ class pylmps(mpiobject):
         return cell
 
     def set_cell(self, cell, cell_only=False):
+        """set the cell vectors
+
+        Args:
+            cell (numpy array): cell vectors
+            cell_only (bool, optional): if True change only the cell params but do not change the systems coords. Defaults to False
+        """
         # we have to check here if the box is correctly rotated in the triclinic case
-        cell = rotate_cell(cell)
+        cell = rotate_cell(cell) 
         #if abs(cell[0,1]) > 10e-14: raise IOError("Cell is not properly rotated")
         #if abs(cell[0,2]) > 10e-14: raise IOError("Cell is not properly rotated")
         #if abs(cell[1,2]) > 10e-14: raise IOError("Cell is not properly rotated")
+        cd = cell.diagonal()
+        if self.control["origin"] == "zero":
+            cd_l = np.zeros([3])
+            cd_h = cd
+        else:
+            cd_l = -cd*0.5
+            cd_h = cd*0.5
+        comm = "change_box all x final %f %f y final %f %f z final %f %f" % (cd_l[0], cd_h[0], cd_l[1], cd_h[1], cd_l[2], cd_h[2])
         if self.bcond <= 2:
-            cd = cell.diagonal()
             if ((self.bcond == 1) and (np.var(cd) > 1e-6)): # check if that is a cubic cell, raise error if not!
-                raise ValueError('the cell to be set is not a cubic cell,diagonals: '+str(cd)) 
-            if cell_only:
-                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f" % tuple(cd))
-            else:
-                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f remap" % tuple(cd))
-            pass # TBI
+                raise ValueError('the cell to be set is not a cubic cell,diagonals: '+str(cd))
         elif self.bcond == 3:
-            cd = tuple(ff2lammps.ff2lammps.cell2tilts(cell))
-            if cell_only:
-                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f" % cd)
-            else:
-                self.lmps.command("change_box all x final 0.0 %f y final 0.0 %f z final 0.0 %f xy final %f xz final %f yz final %f remap" % cd)
+            cd_tilts = (cell[1,0],cell[2,0],cell[2,1])
+            # cd = tuple(ff2lammps.ff2lammps.cell2tilts(cell)) -> old code refers to ff2lmapps .. unlcear!
+            comm += " xy final %f xz final %f yz final %f" % cd_tilts
+        else:
+            raise ValueError("Unknown bcond %d" % self.bcond)
+        if not cell_only:
+            comm += " remap"
+        self.lmps.command(comm)
         return
 
     def get_cellforce(self):
+        """get the forces on the cell vectors
+
+        TBI: improve handling for triclinic systems .. keep lower trianlge structure from the start
+
+        Returns:
+            numpy array: cell force
+        """
         cell    = self.get_cell()
         # we need to get the stress tensor times the volume here (in ananlogy to get_stress in pydlpoly)
         stress  = self.get_stress_tensor()*self.get_cell_volume()
@@ -1121,7 +1145,7 @@ class pylmps(mpiobject):
     def MD_init(self, stage, T = None, p=None, startup = False, startup_seed = 42, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=[], rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
             colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False, dump_thermo=True, 
-            wrap = True):
+            wrap = True, additional_thermo_output=[]):
         """Defines the MD settings
         
         MD_init has to be called before a MD simulation can be performed, the ensemble along with the
@@ -1149,6 +1173,7 @@ class pylmps(mpiobject):
             dump (bool, optional): Defaults to True: defines if an ASCII dump is written
             append (bool, optional): Defaults to False: if True data is appended to the exisiting stage (TBI)
             dump_thermo (bool, optional): defaults to True: if True dump the thermo data written to the log file also to the pdlp dump
+            additional_thermo_output (list, optional): defaults to []: if non-empty, add the thermo columns to the output
         
         Returns:
             None: None
@@ -1261,6 +1286,7 @@ class pylmps(mpiobject):
                                       (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"], self.nbondsmax))
                 self.md_fixes.append("reaxc_bnd")
         # now define what scalar values should be written to the log file
+        thermo_style += additional_thermo_output
         thermo_style += ["spcpu"]
         thermo_style_string = "thermo_style custom step " + " ".join(thermo_style)
         self.lmps.command(thermo_style_string)

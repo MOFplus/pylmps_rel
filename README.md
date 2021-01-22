@@ -66,6 +66,9 @@ make -f Makefile.h5cc
 # Mine looks like this (UBUNTU based MINT):
 #  h5md_SYSINC = -I/usr/include/hdf5/serial
 #  h5md_SYSLIB = -L/usr/lib/x86_64-linux-gnu/hdf5/serial/ -lhdf5
+# For a typical conda environment in your local directory (repalce <USER> by your username)
+#  h5md_SYSINC = -I/home/<USER>/conda/envs/molsys/include
+#  h5md_SYSLIB = -L/home/<USER>/conda/envs/molsys/lib -lhdf5
 #  the first entry points to the leader file (try "locate hdf5.h" to find it)
 #  the second entry points to the lib (try "locate libhdf5")
 
@@ -82,12 +85,17 @@ make yes-MOLECULE
 make yes-USER-H5MD
 make yes-USER-REAXC
 make yes-PYTHON
+make yes-REPLICA
 
 #  --- by default we install the colvars package. very useful!
 
 cd ../lib/colvars/
 make -f Makefile.g++
 cd ../../src/
+
+# For using with python3 you have to copy the Makefile.lammps.python3 to Makefile.lammps in /lib/python
+# In case of using python3.8 or higher you need to add the option --embed for python3-config in addition to --ldflags
+# in the line where python_SYSLIB is defined (This is important especially for the conda environment, where python3.8 is used)
 
 # compile as shared lib 
 make mode=shlib mpi
@@ -96,7 +104,6 @@ ln -s ../src/liblammps.so .
 ln -s ../src/liblammps_mpi.so .
 cd ..
 ```
-For using with python3 you have to copy the Makefile.lammps.python3 to Makefile.lammps in /lib/python.
 
 ### Setup PYTHONPATH
 
