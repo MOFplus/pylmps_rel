@@ -19,7 +19,8 @@ import h5py
 def write_xyz_to_traj(traj,xyz):
     tshape = traj['xyz'].shape[0]
     traj['xyz'].resize(tshape+1,axis=0)
-    traj['xyz'][-1,...] = m.get_xyz_from_frac(xyz)
+    traj['xyz'][-1,...] = xyz
+    #traj['xyz'][-1,...] = m.get_xyz_from_frac(xyz)
     pdlp.flush()
     return
 
@@ -95,7 +96,7 @@ for i,l in enumerate(df):
         try:
             xyz[idx] = numpy.array([float(i) for i in ls[2:5]])
         except:
-            xyz[idx] = numpy.array([float(i) for i in ls[3:6]])
+            xyz[idx] = numpy.array([float(i) for i in ls[3:6]],dtype='float32')
     
 
 write_xyz_to_traj(traj,xyz)
