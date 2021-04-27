@@ -124,6 +124,7 @@ class pylmps(mpiobject):
             "force"  : self.get_force,\
             "cell"   : self.get_cell,\
             "charges": self.get_charge,\
+            "stress" : self.get_stress_tensor,\
         }
         return
 
@@ -241,7 +242,7 @@ class pylmps(mpiobject):
         return
 
 
-    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False, restart_ff=True,
+    def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False, restart_ff=True, pressure_bath_atype=None,
             logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, reaxff="cho", kspace_style='ewald',
             kspace=True,  **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
@@ -326,6 +327,11 @@ class pylmps(mpiobject):
                 if mfpx == None:
                     mfpx = self.name + ".mfpx"
                 self.mol.read(mfpx)
+
+        # set pressure bath atype to avoid attractive interactions between pressure bath and solute
+        if pressure_bath_atype != None:
+            self.mol.ff.settings["pressure_bath_atype"] = pressure_bath_atype
+
         # get the forcefield if this is not done already (if addon is there assume params are exisiting .. TBI a flag in ff addon to indicate that params are set up)
         self.data_file = self.name+".data"
         self.inp_file  = self.name+".in"
@@ -1142,7 +1148,7 @@ class pylmps(mpiobject):
     def MD_init(self, stage, T = None, p=None, startup = False, startup_seed = 42, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=[], rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
             colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False, dump_thermo=True, 
-            wrap = True):
+            wrap = True, additional_thermo_output=[]):
         """Defines the MD settings
         
         MD_init has to be called before a MD simulation can be performed, the ensemble along with the
@@ -1170,6 +1176,7 @@ class pylmps(mpiobject):
             dump (bool, optional): Defaults to True: defines if an ASCII dump is written
             append (bool, optional): Defaults to False: if True data is appended to the exisiting stage (TBI)
             dump_thermo (bool, optional): defaults to True: if True dump the thermo data written to the log file also to the pdlp dump
+            additional_thermo_output (list, optional): defaults to []: if non-empty, add the thermo columns to the output
         
         Returns:
             None: None
@@ -1282,6 +1289,7 @@ class pylmps(mpiobject):
                                       (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"], self.nbondsmax))
                 self.md_fixes.append("reaxc_bnd")
         # now define what scalar values should be written to the log file
+        thermo_style += additional_thermo_output
         thermo_style += ["spcpu"]
         thermo_style_string = "thermo_style custom step " + " ".join(thermo_style)
         self.lmps.command(thermo_style_string)
