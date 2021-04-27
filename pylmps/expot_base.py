@@ -66,13 +66,33 @@ class expot_base(mpiobject):
         self.calc_energy_force()
         # distribute the forces back
         lmps.scatter_atoms("f", 2, 3, np.ctypeslib.as_ctypes(self.force))
-        # return the energy
-        #print ("DEBUGDBEUG ... this is expot callback")
-        #print ("energy: ", self.energy)
-        #print ("force: ")
-        #print (self.force)
         return self.energy
 
+    def test_deriv(self, delta=0.0001, verbose=True):
+        """test the analytic forces by numerical differentiation
+
+        make shure to call the energy and force once before you call this function
+        to make shure all is set up and self.xyz exisits and is initalized
+
+        Args:
+            delta (float, optional): shift of coords. Defaults to 0.0001.
+            verbose (boolen, optiona): print while we go. Defaults to True
+
+        """
+        xyz_keep = self.xyz.copy()
+        force_analytik = self.force.copy()
+        force_numeric  = np.zeros(force_analytik.shape)
+        for i in range(self.natoms):
+            for j in range(3):
+                self.xyz[i,j] += delta
+                ep, f = self.calc_energy_force()
+                self.xyz[i,j] -= 2.0*delta
+                em, f = self.calc_energy_force()
+                self.xyz[i,j] = xyz_keep[i,j]
+                force_numeric[i,j] = -(ep-em)/(2.0*delta)
+                if verbose:
+                    print ("atom %5d dim %2d : analytik %10.5f numeric %10.5f (delta %8.2f)" % (i, j, force_analytik[i,j], force_numeric[i,j], force_analytik[i,j]-force_numeric[i,j]))
+        return force_numeric
 
 
 class expot_ase(expot_base):

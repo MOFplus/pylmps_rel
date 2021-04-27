@@ -149,7 +149,7 @@ class pylmps(mpiobject):
             callback (string): Defaults to None, name of the callback function in the global namespace (will be generated if None)
         """
         assert expot.is_expot == True
-        assert self.is_setup == False, "Must be called before setup"
+        assert self.is_setup == False, "Expot setup must be called before pylmps setup"
         if callback == None:
             callback_name = "callback_expot_%s" % expot.name
         else:
@@ -437,9 +437,9 @@ class pylmps(mpiobject):
             # run the expot's setup with self as an argument --> you have access to all info within the mol object
             expot.setup(self)
             fix_id = "expot_"+expot.name
-            self.add_ename(expot.name, "f_"+fix_id)
             self.lmps.command("fix %s all python/invoke 1 post_force %s" % (fix_id, callback_name))
             self.lmps.command("fix_modify %s energy yes" % fix_id)
+            self.add_ename(expot.name, "f_"+fix_id)
             self.pprint("External Potential %s is set up as fix %s" % (expot.name, fix_id))
         # compute energy of initial config
         if restart_vel is not False:
@@ -514,8 +514,11 @@ class pylmps(mpiobject):
         options = Options()
         options.force_field = uff
         options.pair_style  = "lj/cut 12.5"
+        options.origin = self.control["origin"]
         sim = LammpsSimulation(self.name, options)
         cell, graph = from_molsys(self.mol)
+        if cell == None:
+            print ("bcond is ", bcond)
         sim.set_cell(cell)
         sim.set_graph(graph)
         sim.split_graph()
@@ -753,7 +756,7 @@ class pylmps(mpiobject):
         var = ["boxxlo", "boxxhi", "boxylo", "boxyhi", "boxzlo", "boxzhi", "xy", "xz", "yz"]
         cell_raw = {}
         for v in var:
-            cell_raw[v] = self.lmps.extract_global(v, 1)
+            cell_raw[v] = self.lmps.extract_global(v)
         # currently only orthorombic
         cell = np.zeros([3,3],"d")
         cell[0,0]= cell_raw["boxxhi"]-cell_raw["boxxlo"]
