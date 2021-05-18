@@ -772,7 +772,7 @@ class pylmps(mpiobject):
         var = ["boxxlo", "boxxhi", "boxylo", "boxyhi", "boxzlo", "boxzhi", "xy", "xz", "yz"]
         cell_raw = {}
         for v in var:
-            cell_raw[v] = self.lmps.extract_global(v,1)
+            cell_raw[v] = self.lmps.extract_global(v)
         # currently only orthorombic
         cell = np.zeros([3,3],"d")
         cell[0,0]= cell_raw["boxxhi"]-cell_raw["boxxlo"]
