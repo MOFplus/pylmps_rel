@@ -33,7 +33,7 @@ from .util import rotate_cell
 
 
 class ff2lammps(base):
-   
+    
     def __init__(self, mol,setup_FF=True, reax=False, print_timer=True):
         """
         setup system and get parameter 
@@ -211,19 +211,19 @@ class ff2lammps(base):
 #                lz = np.dot(C,uAcB)
                 # check for tiltings
             if abs(xy)>lx/2: 
-                logger.warning('xy tilting is too large in respect to lx')
+                #logger.warning('xy tilting is too large in respect to lx')
                 self.tilt='large'
             if abs(xz)>lx/2: 
-                logger.warning('xz tilting is too large in respect to lx')
+                #logger.warning('xz tilting is too large in respect to lx')
                 self.tilt='large'
             if abs(yz)>lx/2: 
-                logger.warning('yz tilting is too large in respect to lx')
+                #logger.warning('yz tilting is too large in respect to lx')
                 self.tilt='large'
             if abs(xz)>ly/2: 
-                logger.warning('xz tilting is too large in respect to ly')
+                #logger.warning('xz tilting is too large in respect to ly')
                 self.tilt='large'
             if abs(yz)>ly/2:
-                logger.warning('yz tilting is too large in respect to ly')
+                #logger.warning('yz tilting is too large in respect to ly')
                 self.tilt='large'
             # check if celldiag is positve, else a left hand side basis is formed
             if rcell.diagonal()[0]<0.0: raise IOError('Left hand side coordinate system detected')
@@ -245,8 +245,8 @@ class ff2lammps(base):
         else:
             self._settings[s] = val
             return
-
-    @timer("write data")    
+        
+    @timer("write data")
     def write_data(self, filename="tmp.data"):
         if self.mpi_rank > 0: 
             # wait on master to finish
@@ -254,7 +254,7 @@ class ff2lammps(base):
             return
         self.data_filename = filename
         f = open(filename, "w")
-        # write header
+        # write header 
         if self.reax:
             header = "LAMMPS data file for mol object using ReaxFF\n\n"
         else: 
@@ -343,7 +343,9 @@ class ff2lammps(base):
                 chrg  = charges[i]
                 #   ind  atype molnumb chrg x y z # comment
                 f.write("%10d %5d %5d %12.8f %12.6f %12.6f %12.6f # %s\n" % (i+1, molnumb, atype, chrg, x,y,z, vdwt))
-            self.pprint("The total charge of the system is: %12.8f" % charges.sum())
+            chargesum = charges.sum()
+            if abs(chargesum) > 1e-8:
+              self.pprint("The total charge of the system is: %12.8f" % chargesum)
         # write bonds
         if len(self.rics["bnd"]) != 0: f.write("\nBonds\n\n")
         for i in range(len(self.rics["bnd"])):
@@ -448,6 +450,8 @@ class ff2lammps(base):
         return charges
 
 
+
+
     def pairterm_formatter(self,comment = False):
         # this method behaves different thant the other formatters because it
         # performs a loop over all pairs
@@ -532,6 +536,17 @@ class ff2lammps(base):
                         pstrings.append(("pair_coeff %5d %5d " + self.parf(3) + "   # %s <--> %s") % (i+1,j+1, A, B, C, ati, atj))
                     else:
                         pstrings.append(("pair_coeff %5d %5d " + self.parf(3)) % (i+1,j+1, A, B, C))
+                elif self._settings["vdwtype"]=="lj_12_6":
+                  if vdw[0] == "lj_12_6":
+                    #if len(vdw) <= 3:
+                    r0 , eps = vdw[1]
+                    sig = r0/(2.0**(1.0/6.0))
+                    if comment:
+                      pstrings.append(("pair_coeff %5d %5d " + self.parf(3) + "   # %s <--> %s") % (i+1,j+1, eps, sig, alpha_ij, ati, atj))
+                    else:
+                      pstrings.append(("pair_coeff %5d %5d " + self.parf(3)) % (i+1,j+1, eps, sig, alpha_ij))
+                  else:
+                    pstrings.append(("pair_coeff %5d %5d " + self.parf(3)) % (i+1,j+1, A, B, C))
                 else:
                     raise ValueError("unknown pair setting")
         return pstrings
@@ -634,6 +649,20 @@ class ff2lammps(base):
         elif pot_type == "bb13":
             kss, r1, r3 = params[:3]
             pstring = "class2 bb13 %12.6f %12.6f %12.6f" % (kss*mdyn2kcal, r1, r3)
+        elif pot_type == "aat":
+            kbb, th1, th2 = params[:3]
+            pstring = "class2 aat  %12.6f %12.6f %12.6f" % (kbb*mdyn2kcal, th1, th2)
+        elif pot_type == "at":
+            kb1_1, kb1_2, kb1_3, kb2_1, kb2_2, kb2_3, th1, th2 = params[:8]
+            pstring = "class2 at   %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f" % (kb1_1*mdyn2kcal,
+                      kb1_2*mdyn2kcal, kb1_3*mdyn2kcal, kb2_1*mdyn2kcal, kb2_2*mdyn2kcal, kb2_3*mdyn2kcal, th1, th2)
+        elif pot_type == "ebt":
+            kb1_1, kb1_2, kb1_3, kb2_1, kb2_2, kb2_3, r1, r3 = params[:8]
+            pstring = "class2 ebt  %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f" % (kb1_1*mdyn2kcal,
+                      kb1_2*mdyn2kcal, kb1_3*mdyn2kcal, kb2_1*mdyn2kcal, kb2_2*mdyn2kcal, kb2_3*mdyn2kcal, r1, r3)
+        elif pot_type == "mbt":
+            kb1, kb2, kb3, r2 = params[:4]
+            pstring = "class2 mbt  %12.6f %12.6f %12.6f %12.6f" % (kb1*mdyn2kcal, kb2*mdyn2kcal, kb3*mdyn2kcal, r2)
         else:
             raise ValueError("unknown dihedral potential")
         return ["dihedral_coeff %5d %s" % (number, pstring)]
@@ -652,7 +681,7 @@ class ff2lammps(base):
 
 
     @timer("write input")
-    def write_input(self, filename = "lmp.input", header=None, footer=None, kspace=False):
+    def write_input(self, filename = "lmp.input", header=None, footer=None, kspace=False, noheader=False):
         """
         NOTE: add read data ... fix header with periodic info
         """
@@ -663,31 +692,32 @@ class ff2lammps(base):
             return
         self.input_filename = filename
         f = open(filename, "w")
-        # write standard header        
-        f.write("clear\n")
-        f.write("units real\n")
-        if self._mol.bcond == 0:
-            f.write("boundary f f f\n")
-            #import pdb; pdb.set_trace()
-        else:
-            f.write("boundary p p p\n")
-        f.write("atom_style full\n")
-        #if self._mol.bcond > 0:
-        if self._mol.bcond > 2:
-            f.write('box tilt large\n')
-        f.write("read_data %s\n\n" % self.data_filename)
-        #f.write('change_box all boundary s s s\n')
-        f.write("neighbor 2.0 bin\n\n")
-        # extra header
-        if header:
-            hf = open(header, "r")
-            f.write(hf.readlines())
-            hf.close()
+        # write standard header
+        if not noheader:      
+          f.write("clear\n")
+          f.write("units real\n")
+          if self._mol.bcond == 0:
+              f.write("boundary f f f\n")
+              #import pdb; pdb.set_trace()
+          else:
+              f.write("boundary p p p\n")
+          f.write("atom_style full\n")
+          #if self._mol.bcond > 0:
+          if self._mol.bcond > 2:
+              f.write('box tilt large\n')
+          f.write("read_data %s\n\n" % self.data_filename)
+          f.write("neighbor 2.0 bin\n\n")
+          # extra header
+          if header:
+              hf = open(header, "r")
+              f.write(hf.readlines())
+              hf.close()
         f.write("\n# ------------------------ MOF-FF FORCE FIELD ------------------------------\n")
         # pair style
         if kspace:
-            # use kspace for the long range electrostatics and the corresponding long for the real space pair
-            f.write("\nkspace_style %s %10.4g\n" % (self._settings["kspace_method"], self._settings["kspace_prec"]))
+            if not noheader:
+              # use kspace for the long range electrostatics and the corresponding long for the real space pair
+              f.write("\nkspace_style %s %10.4g\n" % (self._settings["kspace_method"], self._settings["kspace_prec"]))
             # for DEBUG f.write("kspace_modify gewald 0.265058\n")
             if self._mol.ff.settings["coreshell"] == True:
                 if self._settings["vdwtype"] == "buck" and self._settings["chargetype"] == "point":
@@ -698,9 +728,12 @@ class ff2lammps(base):
             elif self._settings["vdwtype"] == "wangbuck":
                  f.write("pair_style wangbuck/coul/gauss/long %10.4f %10.4f %10.4f\n\n" % 
                     (self._settings["vdw_smooth"], self._settings["coul_smooth"], self._settings["cutoff"]))
-            elif self._settings["chargetype"] == "gaussian":
+            elif (self._settings["chargetype"] == "gaussian") & ((self._settings["vdwtype"] == "buck6d")|(self._settings["vdwtype"] == "exp6_damped")):
                 f.write("pair_style buck6d/coul/gauss/long %10.4f %10.4f %10.4f\n\n" % 
                     (self._settings["vdw_smooth"], self._settings["coul_smooth"], self._settings["cutoff"]))
+            elif (self._settings["chargetype"] == "gaussian") & (self._settings["vdwtype"] == "lj_12_6"):
+                f.write("pair_style lj/charmm/coul/gauss/long %10.4f %10.4f %10.4f %10.4f\n\n\n\n" %
+                    (self._settings["cut_lj_inner"], self._settings["cut_lj"],self._settings["coul_smooth"], self._settings["cut_coul"]))
             elif self._settings["chargetype"] == "point":
                 f.write("pair_style buck/coul/long %10.4f\n\n" % (self._settings["cutoff"]))
                 #f.write("pair_style buck/coul/long %10.4f\n\n" % (14.0))
@@ -708,14 +741,17 @@ class ff2lammps(base):
                 raise NotImplementedError
         else:
             # use shift damping (dsf)
+
             if self._mol.ff.settings["coreshell"] == True:
                 f.write("\npair_style buck6d/coul/gauss/dsf/cs %10.4f %10.4f\n\n" % (self._settings["vdw_smooth"], self._settings["cutoff"]))
-            else:
+            elif (self._settings["vdwtype"] == "buck6d")|(self._settings["vdwtype"] == "exp6_damped"):
                 if self._settings['cutoff_coul'] is not None:
                     f.write("\npair_style buck6d/coul/gauss/dsf %10.4f %10.4f %10.4f\n\n" % (self._settings["vdw_smooth"], self._settings["cutoff"],self._settings['cutoff_coul']))
                 else:
                     f.write("\npair_style buck6d/coul/gauss/dsf %10.4f %10.4f\n\n" % (self._settings["vdw_smooth"], self._settings["cutoff"]))
-
+            elif self._settings["vdwtype"] == "lj_12_6":
+                f.write("\npair_style lj/charmm/coul/gauss/dsf %10.4f %10.4f %10.4f\n\n" %
+                     (self._settings["cut_lj_inner"], self._settings["cut_lj"], self._settings["cut_coul"]))
         pairstrings = self.pairterm_formatter(comment = True)
         for s in pairstrings: f.write((s+"\n"))
 #        for i, ati in enumerate(self.plmps_atypes):
@@ -753,13 +789,13 @@ class ff2lammps(base):
                     E0 = params[2]
                     k  = params[0]*mdyn2kcal/2.0
                     alpha = np.sqrt(k/E0)
-                    pstring = "morse %12.6f%12.6f %12.6f" % (E0, alpha, r0)
+                    pstring = "morse %12.6f %12.6f %12.6f" % (E0, alpha, r0)
                 else:
                     raise ValueError("unknown bond potential")
                 f.write("bond_coeff %5d %s    # %s\n" % (bt_number, pstring, ibt))
         # angle style
         if len(list(self.par_types["ang"].keys())) > 0:
-            if self._settings["vdwtype"]=="buck" or self._settings["vdwtype"]=="wangbuck":
+            if self._settings["vdwtype"]=="buck" or self._settings["vdwtype"]=="wangbuck" or self._settings['vdwtype']=="lj_12_6":
                 f.write("\nangle_style hybrid class2/p6\n\n")
             else:
                 if self._settings["use_angle_cosine_buck6d"]:
@@ -807,6 +843,7 @@ class ff2lammps(base):
                     raise ValueError("unknown angle potential")
         # dihedral style
         if len(self.par_types["dih"].keys()) > 0: f.write("\ndihedral_style hybrid opls class2\n\n")
+ #           f.write("\ndihedral_style opls\n\n")
         for dt in self.par_types["dih"].keys():
             dt_number = self.par_types["dih"][dt]
             # manage class2 terms if they are not set
@@ -815,10 +852,18 @@ class ff2lammps(base):
             class2 = [False, False, False, False, False, False] 
             for idt in dt:
                 pot_type, params = self.par["dih"][idt]
-                if pot_type == "cos3":
+                pstrings = []
+                if (pot_type == "cos3") & (len(dt) == 1):
                     assert len(dt) == 1, "Only class2 allows combination of potentials!"
                     v1, v2, v3 = params[:3]
                     pstring = "opls %12.6f %12.6f %12.6f %12.6f" % (v1, v2, v3, 0.0)
+                elif (pot_type == "cos3") & (len(dt) > 1):
+                    # use class2 if there are torsional cross terms
+                    # also, change the ptype to class2
+                    v1, v2, v3 = params[:3]
+                    self.par["dih"][idt] = ['class2',[v1,0.0,v2,0.0,v3,0.0]]
+                    class2[0] = True
+                    pstring = "class2 %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f" % (v1/2.,0.0,v2/2.,0.0,v3/2.,0.0)
                 elif pot_type == "cos4":
                     assert len(dt) == 1, "Only class2 allows combination of potentials!"
                     v1, v2, v3, v4 = params[:4]
@@ -829,6 +874,24 @@ class ff2lammps(base):
                     #r for rest_value
                     v1, r1, v2, r2, v3, r3 = params[:6]
                     pstring = "class2 %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f" % (v1/2.,r1,v2/2.,r2,v3/2.,r3)
+                elif pot_type == "mbt":
+                    kb1, kb2, kb3, r2 = params[:4]
+                    pstring = "class2 mbt  %12.6f %12.6f %12.6f %12.6f" % (kb1*mdyn2kcal, kb2*mdyn2kcal, kb3*mdyn2kcal, r2)
+                    class2[1] = True
+                elif pot_type == "ebt":
+                    kb1_1, kb1_2, kb1_3, kb2_1, kb2_2, kb2_3, r1, r3 = params[:8]
+                    pstring = "class2 ebt  %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f" % (kb1_1*mdyn2kcal,
+                              kb1_2*mdyn2kcal, kb1_3*mdyn2kcal, kb2_1*mdyn2kcal, kb2_2*mdyn2kcal, kb2_3*mdyn2kcal, r1, r3)
+                    class2[2] = True
+                elif pot_type == "at":
+                    kb1_1, kb1_2, kb1_3, kb2_1, kb2_2, kb2_3, th1, th2 = params[:8]
+                    pstring = "class2 at   %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f %12.6f" % (kb1_1*mdyn2kcal,
+                              kb1_2*mdyn2kcal, kb1_3*mdyn2kcal, kb2_1*mdyn2kcal, kb2_2*mdyn2kcal, kb2_3*mdyn2kcal, th1, th2)
+                    class2[3] = True
+                elif pot_type == "aat":
+                    kbb, th1, th2 = params[:3]
+                    pstring = "class2 aat  %12.6f %12.6f %12.6f" % (kbb*mdyn2kcal, th1, th2)
+                    class2[4] = True
                 elif pot_type == "bb13":
                     class2[5] = True
                     kss, r1, r3 = params[:3]
@@ -888,5 +951,3 @@ class ff2lammps(base):
         if self.mpi_rank == 0:
             if self.print_timer is True:
                 self.timer.write()
-
-    
