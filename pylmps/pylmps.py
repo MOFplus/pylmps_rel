@@ -1274,17 +1274,23 @@ class pylmps(mpiobject):
             self.lmps.command("fix col all colvars %s" %  colvar)
             self.md_fixes.append("col")
         # add the fix to produce the bond file in cae this is a reax calcualtion
-        if self.use_reaxff:
-            if self.control["reaxff_bondfile"] is not None:
+        if self.use_reaxff or self.use_xtb:
+            create_bondfile = (self.control["reaxff_bondfile"] is not None)
+            if create_bondfile:
                 # compute an upper estimate of the maximum number of bonds in the system
                 self.nbondsmax = 0
                 for e in self.get_elements():
                     self.nbondsmax += elems.maxbond[e]
                 self.nbondsmax /= 2
-                self.pprint("Writing ReaxFF bondtaba and bondorder to pdlp file (nbondsmax = %d)" % self.nbondsmax)
-                self.lmps.command("fix reaxc_bnd all reax/c/bonds %d %s pdlp %d" % \
-                                      (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"], self.nbondsmax))
-                self.md_fixes.append("reaxc_bnd")
+                if self.use_reaxff:
+                    self.pprint("Writing ReaxFF bondtaba and bondorder to pdlp file (nbondsmax = %d)" % self.nbondsmax)
+                    self.lmps.command("fix reaxc_bnd all reax/c/bonds %d %s pdlp %d" % \
+                                          (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"], self.nbondsmax))
+                    self.md_fixes.append("reaxc_bnd")
+                if self.use_xtb:
+                    self.pprint("Writing xTB bondtaba and bondorder to pdlp file (nbondsmax = %d)" % self.nbondsmax)
+                    #TODO
+
         # now define what scalar values should be written to the log file
         thermo_style += additional_thermo_output
         thermo_style += ["spcpu"]

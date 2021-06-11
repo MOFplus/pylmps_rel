@@ -116,6 +116,7 @@ class expot_xtb(expot_base):
         self.maxiter = maxiter     
         self.periodic = mol.periodic
         self.name = "xtb"
+        self.bond_order = None
         return
 
     def setup(self,pl):
@@ -134,14 +135,22 @@ class expot_xtb(expot_base):
         return
 
     def calc_energy_force(self):
+        import sys
+        sys.stdout = open('xtb.out', 'w')
         results = self.gfn.calculate(self.xyz, self.cell)
         #
         # xTB uses a.u. as units so we need to convert
         #
         self.energy  = results['energy'] / kcalmol
         self.force   = -results['gradient'] / kcalmol / bohr
-
+        self.bond_order = results['bondorder']
+        print(results['bondorder'])
         return self.energy, self.force
+
+    def get_bond_order(self):
+        results = self.gfn.calculate(self.xyz, self.cell)
+        self.bond_order = results['bondorder']
+        return self.bond_order
 
 
 """
