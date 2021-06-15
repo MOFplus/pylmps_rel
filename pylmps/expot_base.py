@@ -25,6 +25,7 @@ from molsys.util.units import kcalmol, electronvolt
 bohr = 0.529177249  # remove this when bohr is in molysy.util.units
 
 from .xtb_calc import xtb_calc
+from ase.calculators.turbomole import execute
 
 class expot_base(mpiobject):
 
@@ -110,16 +111,24 @@ class expot_ase(expot_base):
         for i in self.idx:
             assert i < self.natoms
         self.pprint("An ASE external potential was added!")
+        self.atoms.calc.initialize()
         return
 
     def calc_energy_force(self):
         # we have to set the actual coordinates and cell to ASE
         self.atoms.set_cell(self.cell)
         self.atoms.set_positions(self.xyz[self.idx])
+        self.atoms.calc.set_atoms(self.atoms)
+        execute(self.atoms.calc.calculate_energy)
+        self.atoms.calc.read_energy()
+        execute(self.atoms.calc.calculate_forces)
+        self.atoms.calc.read_forces()
         # by default ase uses eV and A as units
         # consequently units has to be changed here to kcal/mol
-        self.energy = self.atoms.get_potential_energy()*electronvolt/kcalmol
-        self.force[self.idx] = self.atoms.get_forces()*electronvolt/kcalmol
+        self.energy = self.atoms.calc.e_total*electronvolt/kcalmol
+        self.force = self.atoms.calc.forces.copy()*electronvolt/kcalmol
+        #self.energy = self.atoms.get_potential_energy()*electronvolt/kcalmol
+        #self.force[self.idx] = 0.0015*self.atoms.get_forces()*electronvolt/kcalmol
         return self.energy, self.force
 
 
