@@ -166,8 +166,8 @@ class expot_xtb(expot_base):
         return
 
     def calc_energy_force(self):
-        import sys
-        sys.stdout = open('xtb.out', 'w')
+        #import sys
+        #sys.stdout = open('xtb.out', 'w')
         results = self.gfn.calculate(self.xyz, self.cell)
         #
         # xTB uses a.u. as units so we need to convert
@@ -175,7 +175,6 @@ class expot_xtb(expot_base):
         self.energy  = results['energy'] / kcalmol
         self.force   = -results['gradient'] / kcalmol / bohr
         self.bond_order = results['bondorder']
-        print(results['bondorder'])
         return self.energy, self.force
 
     def get_bond_order(self):
