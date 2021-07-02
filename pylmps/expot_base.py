@@ -111,6 +111,33 @@ class expot_ase(expot_base):
         for i in self.idx:
             assert i < self.natoms
         self.pprint("An ASE external potential was added!")
+        return
+
+    def calc_energy_force(self):
+        # we have to set the actual coordinates and cell to ASE
+        self.atoms.set_cell(self.cell)
+        self.atoms.set_positions(self.xyz[self.idx])
+        # by default ase uses eV and A as units
+        # consequently units has to be changed here to kcal/mol
+        self.energy = self.atoms.get_potential_energy()*electronvolt/kcalmol
+        self.force[self.idx] = self.atoms.get_forces()*electronvolt/kcalmol
+        return self.energy, self.force
+
+class expot_ase_turbomole(expot_base):
+
+    def __init__(self, atoms, idx):
+        super(expot_ase_turbomole, self).__init__()
+        self.atoms = atoms
+        self.idx = idx
+        self.name = "ase"
+        return
+
+    def setup(self,pl):
+        super(expot_ase_turbomole, self).setup(pl)
+        assert len(self.idx) <= self.natoms
+        for i in self.idx:
+            assert i < self.natoms
+        self.pprint("An ASE external potential was added!")
         self.atoms.calc.initialize()
         return
 
@@ -119,6 +146,7 @@ class expot_ase(expot_base):
         self.atoms.set_cell(self.cell)
         self.atoms.set_positions(self.xyz[self.idx])
         self.atoms.calc.set_atoms(self.atoms)
+        # get energies and forces using turbomole executables
         execute(self.atoms.calc.calculate_energy)
         self.atoms.calc.read_energy()
         execute(self.atoms.calc.calculate_forces)
@@ -127,8 +155,6 @@ class expot_ase(expot_base):
         # consequently units has to be changed here to kcal/mol
         self.energy = self.atoms.calc.e_total*electronvolt/kcalmol
         self.force = self.atoms.calc.forces.copy()*electronvolt/kcalmol
-        #self.energy = self.atoms.get_potential_energy()*electronvolt/kcalmol
-        #self.force[self.idx] = 0.0015*self.atoms.get_forces()*electronvolt/kcalmol
         return self.energy, self.force
 
 
