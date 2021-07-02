@@ -21,3 +21,9 @@ steps:
     cd tests/xtb
     python3 test.py
   displayName: 'testing pylmps GFN1-xTB opt'
+
+- script: |
+    source source_me 
+    cd tests/reaxff
+    python3 test.py
+  displayName: 'testing loose ReaxFF opt'

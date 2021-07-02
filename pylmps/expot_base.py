@@ -134,7 +134,8 @@ class expot_ase(expot_base):
 
 class expot_xtb(expot_base):
 
-    def __init__(self, mol, gfn_param=0,etemp=300.0,accuracy=1.0,uhf=0,verbose=0,maxiter=250):
+    def __init__(self, mol, gfn_param=0,etemp=300.0,accuracy=1.0,uhf=0,verbose=0,maxiter=250
+                ,write_pdlp_file=False,write_frequency=100,pdlpfile=None,restart=None,stage=None):
         super(expot_xtb, self).__init__()
         self.mol = mol
         self.gfn_param = gfn_param
@@ -145,6 +146,12 @@ class expot_xtb(expot_base):
         self.maxiter = maxiter     
         self.periodic = mol.periodic
         self.name = "xtb"
+        self.bond_order = None
+        self.write_pdlp_file = write_pdlp_file
+        self.write_frequency = write_frequency
+        self.pdlpfile = pdlpfile
+        self.restart = restart
+        self.stage = stage
         return
 
     def setup(self,pl):
@@ -158,19 +165,31 @@ class expot_xtb(expot_base):
                       , etemp=self.etemp
                       , verbose=self.verbose
                       , maxiter=self.maxiter
+                      , write_pdlp_file=self.write_pdlp_file
+                      , write_frequency=self.write_frequency
+                      , pdlpfile=self.pdlpfile
+                      , restart=self.restart
+                      , stage=self.stage
                       )
         self.pprint("An xTB external potential was added")
         return
 
     def calc_energy_force(self):
+        #import sys
+        #sys.stdout = open('xtb.out', 'w')
         results = self.gfn.calculate(self.xyz, self.cell)
         #
         # xTB uses a.u. as units so we need to convert
         #
         self.energy  = results['energy'] / kcalmol
         self.force   = -results['gradient'] / kcalmol / bohr
-
+        self.bond_order = results['bondorder']
         return self.energy, self.force
+
+    def get_bond_order(self):
+        results = self.gfn.calculate(self.xyz, self.cell)
+        self.bond_order = results['bondorder']
+        return self.bond_order
 
 
 """

@@ -241,10 +241,9 @@ class pylmps(mpiobject):
             self.lmps.command("unfix restr")
         return
 
-
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", pdlp=None, restart=None, restart_vel=False, restart_ff=True, pressure_bath_atype=None,
             logfile = 'none', bcond=3, uff="UFF4MOF", use_pdlp=False, reaxff="cho", kspace_style='ewald',
-            kspace=True,  **kwargs):
+            kspace=True, silent=False, noheader=False,  **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
         
             any keyword arguments known to control will be set to control
@@ -266,6 +265,8 @@ class pylmps(mpiobject):
                 kspace (bool): defaults to True. If True, use kspace methods to compute the electrostatic interactions
                 kspace_style (str), defaults to "ewald": The method to be used if kspace == True. For now, try with "ewald" or "pppm" (https://lammps.sandia.gov/doc/kspace_style.html)
                 kspace_prec (float), defaults to 1e-6: accuracy setting for the kspace method (https://lammps.sandia.gov/doc/kspace_style.html)
+                silent (bool, optional), if True do not report energies, defaults to False
+                noheader (bool, optional), if True, do not output the header in the lammps input files, defaults to False
         """
         self.timer.start("setup")
         # put all known kwargs into self.control
@@ -429,7 +430,7 @@ class pylmps(mpiobject):
             self.ff2lmp.write_data(filename=self.data_file)
             self.timer.stop()
             self.timer.start("write input")
-            self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"])
+            self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"],noheader=noheader)
             self.timer.stop()
             self.timer.start("lammps read input")
             self.lmps.file(self.inp_file)
@@ -464,7 +465,8 @@ class pylmps(mpiobject):
             # set velocities that have been read from pdlp file (do not use startup=True in MDinit becasue that will overwrite the velocities again)
             self.set_vel(restart_vel)
         self.calc_energy(init=True)
-        self.report_energies()
+        if not silent:
+          self.report_energies()
         self.md_fixes = []
         # Now connect pdlpio (using pdlpio2)
         if use_pdlp and (self.pdlp is None):
@@ -668,7 +670,7 @@ class pylmps(mpiobject):
         if self.is_master and self.print_to_screen:
             __builtin__.print(*args, file=self.out, **kwargs)
             self.out.flush()
-
+        
     def calc_energy(self, init=False):
         if init:
             self.lmps.command("run 0 pre yes post no")
@@ -695,6 +697,14 @@ class pylmps(mpiobject):
             etot += e[en]
             self.pprint("%15s : %15.8f kcal/mol" % (en, e[en]))
         self.pprint("%15s : %15.8f kcal/mol" % ("TOTAL", etot))
+        return etot
+      
+      
+    def get_total_energy(self):
+        e = self.get_energy_contribs()
+        etot = 0.0
+        for en in self.enames:
+            etot += e[en]
         return etot
         
     def get_force(self):
@@ -1004,17 +1014,29 @@ class pylmps(mpiobject):
         return etot
 
     MIN = MIN_cg
-        
-    def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0,maxstep=20):
+    '''
+       custom minimization function (sw)
+    '''
+    def minimize_cg(self, thresh, method="cg", etol=0.0, maxiter=10000, maxeval=10000, silent=False):
+        assert method in ["cg", "hftn", "sd"]
+        self.lmps.command("min_style %s" % method)
+        self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter, maxeval))
+        if not silent:
+          self.report_energies()
+        return
+      
+      
+    def LATMIN_boxrel(self, threshlat, thresh, method="cg", etol=0.0, maxiter=10, maxeval=100, p=0.0,maxstep=20,iso=None):
         assert method in ["cg", "sd"]
-        self.set_restraints()
         thresh *= np.sqrt(3*self.natoms)
+        if iso is None:
+          iso = bcond_map[self.bcond]
         stop = False
         self.lmps.command("min_style %s" % method)
         self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
         counter = 0
         while not stop:
-            self.lmps.command("fix latmin all box/relax %s %f vmax 0.01" % (bcond_map[self.bcond], p))            
+            self.lmps.command("fix latmin all box/relax %s %f vmax 0.01" % (iso, p))            
             self.lmps.command("minimize %f %f %d %d" % (etol, thresh, maxiter*self.natoms, maxeval*self.natoms))
             self.lmps.command("unfix latmin")
             self.lmps.command("min_style %s" % method)
@@ -1289,17 +1311,23 @@ class pylmps(mpiobject):
             self.lmps.command("fix col all colvars %s" %  colvar)
             self.md_fixes.append("col")
         # add the fix to produce the bond file in cae this is a reax calcualtion
-        if self.use_reaxff:
-            if self.control["reaxff_bondfile"] is not None:
+        if self.use_reaxff or self.use_xtb:
+            create_bondfile = (self.control["reaxff_bondfile"] is not None)
+            if create_bondfile:
                 # compute an upper estimate of the maximum number of bonds in the system
                 self.nbondsmax = 0
                 for e in self.get_elements():
                     self.nbondsmax += elems.maxbond[e]
                 self.nbondsmax /= 2
-                self.pprint("Writing ReaxFF bondtaba and bondorder to pdlp file (nbondsmax = %d)" % self.nbondsmax)
-                self.lmps.command("fix reaxc_bnd all reax/c/bonds %d %s pdlp %d" % \
-                                      (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"], self.nbondsmax))
-                self.md_fixes.append("reaxc_bnd")
+                if self.use_reaxff:
+                    self.pprint("Writing ReaxFF bondtaba and bondorder to pdlp file (nbondsmax = %d)" % self.nbondsmax)
+                    self.lmps.command("fix reaxc_bnd all reax/c/bonds %d %s pdlp %d" % \
+                                          (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"], self.nbondsmax))
+                    self.md_fixes.append("reaxc_bnd")
+                if self.use_xtb:
+                    self.pprint("Writing xTB bondtaba and bondorder to pdlp file (nbondsmax = %d)" % self.nbondsmax)
+                    #TODO
+
         # now define what scalar values should be written to the log file
         thermo_style += additional_thermo_output
         thermo_style += ["spcpu"]
@@ -1461,6 +1489,11 @@ class pylmps(mpiobject):
         # self.write("neb_final.xyz", partitions=True)
         self.write_part(self.name + "_neb_final.xyz")
         return
+
+ 
+
+
+
 
 
 
