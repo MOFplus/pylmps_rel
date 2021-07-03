@@ -138,6 +138,7 @@ class expot_ase_turbomole(expot_base):
         for i in self.idx:
             assert i < self.natoms
         self.pprint("An ASE external potential was added!")
+        # perform turbomole define once at the start
         self.atoms.calc.initialize()
         return
 
