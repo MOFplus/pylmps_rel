@@ -25,7 +25,10 @@ from molsys.util.units import kcalmol, electronvolt
 bohr = 0.529177249  # remove this when bohr is in molysy.util.units
 
 from .xtb_calc import xtb_calc
-from ase.calculators.turbomole import execute
+try:
+    from ase.calculators.turbomole import execute
+except ImportError:
+    print("ImportError: Impossible to load ASE")
 
 class expot_base(mpiobject):
 
