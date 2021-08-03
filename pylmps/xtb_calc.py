@@ -23,7 +23,7 @@ import sys
 from molsys.util import pdlpio2
 import molsys.util.elems as elems
 
-from molsys.util.units import bohr
+from molsys.util.constants import bohr
 
 
 #

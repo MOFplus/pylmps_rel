@@ -19,10 +19,8 @@ Created on Tue Jul 23 17:26:02 CEST 2019
 import numpy as np
 from molsys import mpiobject
 from lammps import lammps
-#from molsys.util.units import kcalmol, electronvolt, bohr
-from molsys.util.units import kcalmol, electronvolt
+from molsys.util.constants import kcalmol, electronvolt, bohr
 
-bohr = 0.529177249  # remove this when bohr is in molysy.util.units
 
 from .xtb_calc import xtb_calc
 
