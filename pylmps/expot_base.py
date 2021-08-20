@@ -21,6 +21,7 @@ from molsys import mpiobject
 from lammps import lammps
 #from molsys.util.units import kcalmol, electronvolt, bohr
 from molsys.util.units import kcalmol, electronvolt
+import time
 
 bohr = 0.529177249  # remove this when bohr is in molysy.util.units
 
@@ -32,6 +33,7 @@ class expot_base(mpiobject):
         super(expot_base, self).__init__(mpi_comm,out)
         self.name = "base"
         self.is_expot = True
+        self.expot_time = 0.0
         return
 
     def setup(self, pl):
@@ -41,10 +43,7 @@ class expot_base(mpiobject):
         self.natoms = self.pl.get_natoms()
         self.energy = 0.0
         self.force  = np.zeros([self.natoms, 3], dtype="float64")
-        return
-
-    def calc_numforce(self, delta=0.001):
-        #TBI
+        self.step = 0
         return
     
     def calc_energy_force(self):
@@ -56,6 +55,7 @@ class expot_base(mpiobject):
     def callback(self, lmps, vflag):
         """The callback function called by lammps .. should not be changed
         """
+        tstart = time.time()
         lmps = lammps(ptr=lmps)
         # get the current atom positions
         self.xyz = np.ctypeslib.as_array(lmps.gather_atoms("x",1,3))
@@ -66,6 +66,8 @@ class expot_base(mpiobject):
         self.calc_energy_force()
         # distribute the forces back
         lmps.scatter_atoms("f", 2, 3, np.ctypeslib.as_ctypes(self.force))
+        self.step += 1
+        self.expot_time += time.time() - tstart 
         return self.energy
 
     def test_deriv(self, delta=0.0001, verbose=True):
