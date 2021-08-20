@@ -19,13 +19,14 @@ Created on Tue Jul 23 17:26:02 CEST 2019
 import numpy as np
 from molsys import mpiobject
 from lammps import lammps
-#from molsys.util.units import kcalmol, electronvolt, bohr
-from molsys.util.units import kcalmol, electronvolt
+from molsys.util.constants import kcalmol, electronvolt, bohr
 import time
 
-bohr = 0.529177249  # remove this when bohr is in molysy.util.units
-
 from .xtb_calc import xtb_calc
+try:
+    from ase.calculators.turbomole import execute
+except ImportError:
+    print("ImportError: Impossible to load ASE")
 
 class expot_base(mpiobject):
 
@@ -124,10 +125,46 @@ class expot_ase(expot_base):
         self.force[self.idx] = self.atoms.get_forces()*electronvolt/kcalmol
         return self.energy, self.force
 
+class expot_ase_turbomole(expot_base):
+
+    def __init__(self, atoms, idx):
+        super(expot_ase_turbomole, self).__init__()
+        self.atoms = atoms
+        self.idx = idx
+        self.name = "ase"
+        return
+
+    def setup(self,pl):
+        super(expot_ase_turbomole, self).setup(pl)
+        assert len(self.idx) <= self.natoms
+        for i in self.idx:
+            assert i < self.natoms
+        self.pprint("An ASE external potential was added!")
+        # perform turbomole define once at the start
+        self.atoms.calc.initialize()
+        return
+
+    def calc_energy_force(self):
+        # we have to set the actual coordinates and cell to ASE
+        self.atoms.set_cell(self.cell)
+        self.atoms.set_positions(self.xyz[self.idx])
+        self.atoms.calc.set_atoms(self.atoms)
+        # get energies and forces using turbomole executables
+        execute(self.atoms.calc.calculate_energy)
+        self.atoms.calc.read_energy()
+        execute(self.atoms.calc.calculate_forces)
+        self.atoms.calc.read_forces()
+        # by default ase uses eV and A as units
+        # consequently units has to be changed here to kcal/mol
+        self.energy = self.atoms.calc.e_total*electronvolt/kcalmol
+        self.force = self.atoms.calc.forces.copy()*electronvolt/kcalmol
+        return self.energy, self.force
+
 
 class expot_xtb(expot_base):
 
-    def __init__(self, mol, gfn_param=0,etemp=300.0,accuracy=1.0,uhf=0,verbose=0,maxiter=250):
+    def __init__(self, mol, gfn_param=0,etemp=300.0,accuracy=1.0,uhf=0,verbose=0,maxiter=250
+                ,write_pdlp_file=False,write_frequency=100,pdlpfile=None,restart=None,stage=None):
         super(expot_xtb, self).__init__()
         self.mol = mol
         self.gfn_param = gfn_param
@@ -138,6 +175,12 @@ class expot_xtb(expot_base):
         self.maxiter = maxiter     
         self.periodic = mol.periodic
         self.name = "xtb"
+        self.bond_order = None
+        self.write_pdlp_file = write_pdlp_file
+        self.write_frequency = write_frequency
+        self.pdlpfile = pdlpfile
+        self.restart = restart
+        self.stage = stage
         return
 
     def setup(self,pl):
@@ -151,19 +194,31 @@ class expot_xtb(expot_base):
                       , etemp=self.etemp
                       , verbose=self.verbose
                       , maxiter=self.maxiter
+                      , write_pdlp_file=self.write_pdlp_file
+                      , write_frequency=self.write_frequency
+                      , pdlpfile=self.pdlpfile
+                      , restart=self.restart
+                      , stage=self.stage
                       )
         self.pprint("An xTB external potential was added")
         return
 
     def calc_energy_force(self):
+        #import sys
+        #sys.stdout = open('xtb.out', 'w')
         results = self.gfn.calculate(self.xyz, self.cell)
         #
         # xTB uses a.u. as units so we need to convert
         #
         self.energy  = results['energy'] / kcalmol
         self.force   = -results['gradient'] / kcalmol / bohr
-
+        self.bond_order = results['bondorder']
         return self.energy, self.force
+
+    def get_bond_order(self):
+        results = self.gfn.calculate(self.xyz, self.cell)
+        self.bond_order = results['bondorder']
+        return self.bond_order
 
 
 """

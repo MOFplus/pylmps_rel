@@ -290,6 +290,7 @@ class pylmps(mpiobject):
         self.use_uff = False
         self.use_reaxff = False
         self.use_xtb = False
+        self.use_ase = False
         if ff == "UFF":
             self.pprint("USING UFF SETUP!! EXPERIMENTAL!!")
             self.use_uff = True
@@ -302,8 +303,11 @@ class pylmps(mpiobject):
                 self.enames.remove(en)
             self.enames = ["reax_bond"]+self.enames
             self.evars["reax_bond"] = "evdwl"
-        if ff == "xTB":
-            self.use_xtb = True
+        if ff == "xTB" or ff == "ase":
+            if ff == "xTB":
+                self.use_xtb = True
+            elif ff == "ase":
+                self.use_ase = True
             for en in ("Coulomb", "vdW", "CoulPBC", "bond", "angle", "oop", "torsion"):
                 self.enames.remove(en)
         # set the pdlp filename
@@ -336,7 +340,7 @@ class pylmps(mpiobject):
         # get the forcefield if this is not done already (if addon is there assume params are exisiting .. TBI a flag in ff addon to indicate that params are set up)
         self.data_file = self.name+".data"
         self.inp_file  = self.name+".in"
-        if not self.use_uff and not self.use_reaxff and not self.use_xtb:
+        if not self.use_uff and not self.use_reaxff and not self.use_xtb and not self.use_ase:
             if not "ff" in self.mol.loaded_addons:
                 self.mol.addon("ff")
                 if par or ff=="file":
@@ -364,7 +368,7 @@ class pylmps(mpiobject):
                 self.ff2lmp.setting("cutoff", self.control["cutoff"])
             if self.control['cutoff_coul'] is not None:
                 self.ff2lmp.setting('cutoff_coul', self.control['cutoff_coul'])
-        elif self.use_reaxff or self.use_xtb:
+        elif self.use_reaxff or self.use_xtb or self.use_ase:
             # incase of reaxff we need to converter only for the data file
             self.ff2lmp = ff2lammps.ff2lammps(self.mol, reax=True)
         if self.use_uff:
@@ -408,6 +412,14 @@ class pylmps(mpiobject):
             self.ff2lmp.write_data(filename=self.data_file)
             self.timer.stop()
             self.timer.start("setup xtb")
+            # in this subroutine lamps commands are issued to read the data file and start up (instead of reading a lammps input file)
+            self.setup_xtb()
+            self.timer.stop()
+        elif self.use_ase:
+            self.timer.start("write data")
+            self.ff2lmp.write_data(filename=self.data_file)
+            self.timer.stop()
+            self.timer.start("setup ase")
             # in this subroutine lamps commands are issued to read the data file and start up (instead of reading a lammps input file)
             self.setup_xtb()
             self.timer.stop()
@@ -1299,17 +1311,23 @@ class pylmps(mpiobject):
             self.lmps.command("fix col all colvars %s" %  colvar)
             self.md_fixes.append("col")
         # add the fix to produce the bond file in cae this is a reax calcualtion
-        if self.use_reaxff:
-            if self.control["reaxff_bondfile"] is not None:
+        if self.use_reaxff or self.use_xtb:
+            create_bondfile = (self.control["reaxff_bondfile"] is not None)
+            if create_bondfile:
                 # compute an upper estimate of the maximum number of bonds in the system
                 self.nbondsmax = 0
                 for e in self.get_elements():
                     self.nbondsmax += elems.maxbond[e]
                 self.nbondsmax /= 2
-                self.pprint("Writing ReaxFF bondtaba and bondorder to pdlp file (nbondsmax = %d)" % self.nbondsmax)
-                self.lmps.command("fix reaxc_bnd all reax/c/bonds %d %s pdlp %d" % \
-                                      (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"], self.nbondsmax))
-                self.md_fixes.append("reaxc_bnd")
+                if self.use_reaxff:
+                    self.pprint("Writing ReaxFF bondtaba and bondorder to pdlp file (nbondsmax = %d)" % self.nbondsmax)
+                    self.lmps.command("fix reaxc_bnd all reax/c/bonds %d %s pdlp %d" % \
+                                          (self.control["reaxff_bondfreq"], self.control["reaxff_bondfile"], self.nbondsmax))
+                    self.md_fixes.append("reaxc_bnd")
+                if self.use_xtb:
+                    self.pprint("Writing xTB bondtaba and bondorder to pdlp file (nbondsmax = %d)" % self.nbondsmax)
+                    #TODO
+
         # now define what scalar values should be written to the log file
         thermo_style += additional_thermo_output
         thermo_style += ["spcpu"]
