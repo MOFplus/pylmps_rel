@@ -681,7 +681,7 @@ class ff2lammps(base):
 
 
     @timer("write input")
-    def write_input(self, filename = "lmp.input", header=None, footer=None, kspace=False, noheader=False):
+    def write_input(self, filename = "lmp.input", header=None, footer=None, kspace=False, noheader=False, boundary=None):
         """
         NOTE: add read data ... fix header with periodic info
         """
@@ -694,30 +694,32 @@ class ff2lammps(base):
         f = open(filename, "w")
         # write standard header
         if not noheader:      
-          f.write("clear\n")
-          f.write("units real\n")
-          if self._mol.bcond == 0:
-              f.write("boundary f f f\n")
-              #import pdb; pdb.set_trace()
-          else:
-              f.write("boundary p p p\n")
-          f.write("atom_style full\n")
-          #if self._mol.bcond > 0:
-          if self._mol.bcond > 2:
-              f.write('box tilt large\n')
-          f.write("read_data %s\n\n" % self.data_filename)
-          f.write("neighbor 2.0 bin\n\n")
-          # extra header
-          if header:
-              hf = open(header, "r")
-              f.write(hf.readlines())
-              hf.close()
+            f.write("clear\n")
+            f.write("units real\n")
+            if boundary:
+                assert len(boundary)==3
+            else:
+                if self._mol.bcond == 0:
+                    boundary = ("f", "f", "f")
+                else:
+                    boundary = ("p", "p", "p")
+            f.write("boundary %s %s %s\n" % tuple(boundary))
+            f.write("atom_style full\n")
+            if self._mol.bcond > 2:
+                f.write('box tilt large\n')
+            f.write("read_data %s\n\n" % self.data_filename)
+            f.write("neighbor 2.0 bin\n\n")
+            # extra header
+            if header:
+                hf = open(header, "r")
+                f.write(hf.readlines())
+                hf.close()
         f.write("\n# ------------------------ MOF-FF FORCE FIELD ------------------------------\n")
         # pair style
         if kspace:
             if not noheader:
-              # use kspace for the long range electrostatics and the corresponding long for the real space pair
-              f.write("\nkspace_style %s %10.4g\n" % (self._settings["kspace_method"], self._settings["kspace_prec"]))
+                # use kspace for the long range electrostatics and the corresponding long for the real space pair
+                f.write("\nkspace_style %s %10.4g\n" % (self._settings["kspace_method"], self._settings["kspace_prec"]))
             # for DEBUG f.write("kspace_modify gewald 0.265058\n")
             if self._mol.ff.settings["coreshell"] == True:
                 if self._settings["vdwtype"] == "buck" and self._settings["chargetype"] == "point":

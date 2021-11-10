@@ -100,6 +100,7 @@ class pylmps(mpiobject):
         self.control["cutoff"] = 12.0
         self.control["cutoff_coul"] = None
         self.control["origin"] = "zero"        # location of origin in the box: either "zero" or "center"
+        self.control["boundary"] = None
         # reax defaults
         self.control["reaxff_timestep"] = 0.1  # ReaxFF timestep is smaller than usual
         self.control["reaxff_filepath"] = "."
@@ -430,7 +431,7 @@ class pylmps(mpiobject):
             self.ff2lmp.write_data(filename=self.data_file)
             self.timer.stop()
             self.timer.start("write input")
-            self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"],noheader=noheader)
+            self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"], noheader=noheader, boundary=self.control["boundary"])
             self.timer.stop()
             self.timer.start("lammps read input")
             self.lmps.file(self.inp_file)
@@ -1358,7 +1359,7 @@ class pylmps(mpiobject):
                 # now close the hdf5 file becasue it will be written within lammps
                 self.pdlp.close()
                 # print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
-                self.lmps.command("dump %s all pdlp %i %s stage %s %s " % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.lmps.command("dump %s all mfp5 %i %s stage %s %s " % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
                 self.md_dumps.append(stage+"_pdlp")
         return
 
