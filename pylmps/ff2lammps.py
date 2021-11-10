@@ -19,7 +19,7 @@ import copy
 import molsys
 import molsys.util.elems as elements
 from molsys.addon import base
-from molsys.util.timing import timer, Timer
+from molsys.util.timer import timer, Timer
 
 import logging
 logger = logging.getLogger('molsys.ff2lammps')
@@ -50,8 +50,8 @@ class ff2lammps(base):
         """
         super(ff2lammps,self).__init__(mol)
         # generate a timer
-        self.timer = Timer(name = "ff2lammps")
-        self.timer.start("init")
+        self.timer = Timer("ff2lammps")
+        self.timer.start()
         self.print_timer = print_timer
         # generate the force field
         if setup_FF != True:
@@ -92,14 +92,12 @@ class ff2lammps(base):
                 self.plmps_mass[at] = elements.mass[at]
             self.timer.stop()
             return
-        self.timer.start("setup pair pots")
-        self._mol.ff.setup_pair_potentials()
-        self.timer.stop()
+        with self.timer("setup pair pots"):
+            self._mol.ff.setup_pair_potentials()
         # set up the molecules
-        self.timer.start("molecules addon")
-        self._mol.addon("molecules")
-        self._mol.molecules()
-        self.timer.stop()
+        with self.timer("molecules addon"):
+            self._mol.addon("molecules")
+            self._mol.molecules()
         # make lists of paramtypes and conenct to mol.ff obejcts as shortcuts
         self.par = {}
         self.parind = {}
@@ -112,20 +110,19 @@ class ff2lammps(base):
             par_types = {}
             i = 1
             iric = 0
-            self.timer.start("par loop %s" % r)
-            for pil in self.parind[r]:
-                if pil:
-                    pil.sort()
-                    tpil = tuple(pil)
-                    # we have to check if we have none potentials in the par structure, then we have to remove them
-                    if len(tpil) == 1 and self.par[r][tpil[0]][0] == 'none': 
-                        continue
-                    else:
-                        iric += 1
-                    if not tpil in par_types:
-                        par_types[tpil] = i
-                        i += 1
-            self.timer.stop()
+            with self.timer("par loop %s" % r):
+                for pil in self.parind[r]:
+                    if pil:
+                        pil.sort()
+                        tpil = tuple(pil)
+                        # we have to check if we have none potentials in the par structure, then we have to remove them
+                        if len(tpil) == 1 and self.par[r][tpil[0]][0] == 'none': 
+                            continue
+                        else:
+                            iric += 1
+                        if not tpil in par_types:
+                            par_types[tpil] = i
+                            i += 1
             self.par_types[r] = par_types
             self.npar[r] = i-1
             self.nric[r] = iric
@@ -952,4 +949,4 @@ class ff2lammps(base):
     def report_timer(self):
         if self.mpi_rank == 0:
             if self.print_timer is True:
-                self.timer.write()
+                self.timer.report()

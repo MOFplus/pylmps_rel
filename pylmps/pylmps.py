@@ -12,7 +12,6 @@ Created on Sat Apr 22 17:43:56 2017
 """
 from __future__ import print_function
 import numpy as np
-import string
 import os
 from mpi4py import MPI
 
@@ -30,7 +29,7 @@ from molsys import mpiobject
 
 from molsys.util import pdlpio2
 
-from molsys.util.timing import timer, Timer
+from molsys.util.timer import timer, Timer
 
 import molsys.util.elems as elems
 
@@ -269,7 +268,7 @@ class pylmps(mpiobject):
                 silent (bool, optional), if True do not report energies, defaults to False
                 noheader (bool, optional), if True, do not output the header in the lammps input files, defaults to False
         """
-        self.timer.start("setup")
+        self.timer.start()
         # put all known kwargs into self.control
         for kw in kwargs:
             if kw in self.control:
@@ -352,9 +351,8 @@ class pylmps(mpiobject):
                     self.mol.ff.assign_params(ff)
             self.mol.bcond = bcond
             # now generate the converter
-            self.timer.start("init ff2lammps")
-            self.ff2lmp = ff2lammps.ff2lammps(self.mol,print_timer=self.print_to_screen)
-            self.timer.stop()
+            with self.timer("init ff2lammps"):
+                self.ff2lmp = ff2lammps.ff2lammps(self.mol,print_timer=self.print_to_screen)
             # adjust the settings
             if self.control["oop_umbrella"]:
                 self.pprint("using umbrella_harmonic for OOP terms")
@@ -401,41 +399,32 @@ class pylmps(mpiobject):
         self.QMMM = False
         self.bcond = bcond
         if self.use_reaxff:
-            self.timer.start("write data")
-            self.ff2lmp.write_data(filename=self.data_file)
-            self.timer.stop()
-            self.timer.start("setup reaxff")
-            # in this subroutine lamps commands are issued to read the data file and strat up (instead of reading a lammps input file)
-            self.setup_reaxff()
-            self.timer.stop()
+            with self.timer("write data"):
+                self.ff2lmp.write_data(filename=self.data_file)
+            with self.timer("setup reaxff"):
+                # in this subroutine lamps commands are issued to read the data file and strat up (instead of reading a lammps input file)
+                self.setup_reaxff()
         elif self.use_xtb:
-            self.timer.start("write data")
-            self.ff2lmp.write_data(filename=self.data_file)
-            self.timer.stop()
-            self.timer.start("setup xtb")
-            # in this subroutine lamps commands are issued to read the data file and start up (instead of reading a lammps input file)
-            self.setup_xtb()
-            self.timer.stop()
+            with self.timer("write data"):
+                self.ff2lmp.write_data(filename=self.data_file)
+            with self.timer("setup xtb"):
+                # in this subroutine lamps commands are issued to read the data file and start up (instead of reading a lammps input file)
+                self.setup_xtb()
         elif self.use_ase:
-            self.timer.start("write data")
-            self.ff2lmp.write_data(filename=self.data_file)
-            self.timer.stop()
-            self.timer.start("setup ase")
-            # in this subroutine lamps commands are issued to read the data file and start up (instead of reading a lammps input file)
-            self.setup_xtb()
-            self.timer.stop()
+            with self.timer("write data"):
+                self.ff2lmp.write_data(filename=self.data_file)
+            with self.timer.start("setup ase"):
+                # in this subroutine lamps commands are issued to read the data file and start up (instead of reading a lammps input file)
+                self.setup_xtb()
         elif self.use_uff==False:
             # before writing output we can adjust the settings in ff2lmp
             # TBI
-            self.timer.start("write data")
-            self.ff2lmp.write_data(filename=self.data_file)
-            self.timer.stop()
-            self.timer.start("write input")
-            self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"], noheader=noheader, boundary=self.control["boundary"])
-            self.timer.stop()
-            self.timer.start("lammps read input")
-            self.lmps.file(self.inp_file)
-            self.timer.stop()
+            with self.timer("write data"):
+                self.ff2lmp.write_data(filename=self.data_file)
+            with self.timer("write input"):
+                self.ff2lmp.write_input(filename=self.inp_file, kspace=self.control["kspace"], noheader=noheader, boundary=self.control["boundary"])
+            with self.timer("lammps read input"):
+                self.lmps.file(self.inp_file)
         else:
             self.lmps.file(self.inp_file) # for UFF setup
         os.chdir(self.start_dir)
@@ -476,7 +465,7 @@ class pylmps(mpiobject):
         self.is_setup = True
         # report timing
         if self.is_master and self.print_to_screen:
-            self.timer.write()
+            self.timer.report()
         if not self.use_uff and not self.use_reaxff:
             self.ff2lmp.report_timer()
         return
