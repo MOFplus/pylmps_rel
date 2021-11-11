@@ -27,7 +27,7 @@ from . import ff2lammps
 from .util import rotate_cell
 from molsys import mpiobject
 
-from molsys.util import pdlpio2 as mfp5io # import with new name until this is corrected in molsys (rename)
+from molsys.util import mfp5io 
 
 from molsys.util.timer import timer, Timer
 
@@ -321,7 +321,7 @@ class pylmps(mpiobject):
         else:
             if restart is not None:
                 # The mol object should be read from the mfp5 file
-                self.mfp5 = mfp5io.pdlpio2(self.mfp5name, ffe=self, restart=restart)   # TODO rename when changed in molsys
+                self.mfp5 = mfp5io.mfp5io(self.mfp5name, ffe=self, restart=restart)   # TODO rename when changed in molsys
                 if restart_vel is True:
                     self.mol, restart_vel  = self.mfp5.get_mol_from_system(vel=True, restart_ff=restart_ff)
                 else:
