@@ -134,8 +134,16 @@ class xtb_calc:
          self.calc.set_accuracy(self.accuracy)
       else:
          # update calc (molecule obejct under the hood)
-         self.calc.update(positions, lattice=cell)
-      
+         try:
+             self.calc.update(positions, lattice=cell)
+         except:
+             print("Problems updating coordinates:")
+             print("poistions:")
+             print(positions)
+             print("Lattice:")
+             print(cell)
+             sys.exit()
+
       res = self.calc.singlepoint()
 
       results = { 'energy'    : res.get_energy()
@@ -155,50 +163,51 @@ class xtb_calc:
            self.write_counter = 1  # Set back to zero
            self.startup = False
            self.pdlp.open()
-           st = self.pdlp.h5file[self.stage]
-           traj = st["traj"]
-           bond_order = results['bondorder']
-           # Setup bondtab
-           bond_tab = np.zeros((self.nbondsmax,2),dtype=int)
-           bond_ord = np.zeros((self.nbondsmax))
-           bothres = 0.5
-           natoms = self.get_natoms()
-           nbnd = 0
-           for iat in range(natoms):
-              for jat in range(0,iat+1): 
-                 if bond_order[iat][jat] > bothres:
-                    bond_tab[nbnd][0] = iat
-                    bond_tab[nbnd][1] = jat
-                    bond_ord[nbnd] = bond_order[iat][jat]
-                    nbnd += 1
-           # Add bondtab to pdlp file
-           if "bondord" in traj:
-              traj_bondord = traj["bondord"]
-              traj_bondord.resize((traj_bondord.shape[0] + 1),axis=0)
-              traj_bondord[-1:] = bond_ord
-              traj_bondtab = traj["bondtab"]
-              traj_bondtab.resize((traj_bondtab.shape[0] + 1),axis=0)
-              traj_bondtab[-1:] = bond_tab
-           else:
-              # entry does not exist. Create it
-              self.pdlp.add_bondtab(self.stage, self.nbondsmax, bond_tab, bond_ord)
-           # Add trajectory info
-           xyz_data = self.mol.get_xyz()
-           #
-           # add xyz data
-           #
-           if "xyz" in traj:
-              trj_xyz = traj["xyz"]
-              trj_xyz.resize((trj_xyz.shape[0] + 1),axis = 0)
-              trj_xyz[-1:] = xyz_data 
-           else:
-              xyzshape = (1,) + xyz_data.shape
-              trj_xyz = traj.require_dataset("xyz",shape=xyzshape, dtype=xyz_data.dtype, maxshape=( (None,) + xyz_data.shape), chunks=xyzshape)
-              trj_xyz[...] = self.mol.get_xyz()
-           velocities = False # TODO
-           if velocities:
-               trj_vel = traj.require_dataset("vel", shape=vel.shape, dtype=vel.dtype)
-               #trj_vel[...] = vel #TODO
+           if self.stage in self.pdlp.h5file:
+               st = self.pdlp.h5file[self.stage]
+               traj = st["traj"]
+               bond_order = results['bondorder']
+               # Setup bondtab
+               bond_tab = np.zeros((self.nbondsmax,2),dtype=int)
+               bond_ord = np.zeros((self.nbondsmax))
+               bothres = 0.5
+               natoms = self.get_natoms()
+               nbnd = 0
+               for iat in range(natoms):
+                  for jat in range(0,iat+1): 
+                     if bond_order[iat][jat] > bothres:
+                        bond_tab[nbnd][0] = iat
+                        bond_tab[nbnd][1] = jat
+                        bond_ord[nbnd] = bond_order[iat][jat]
+                        nbnd += 1
+               # Add bondtab to pdlp file
+               if "bondord" in traj:
+                  traj_bondord = traj["bondord"]
+                  traj_bondord.resize((traj_bondord.shape[0] + 1),axis=0)
+                  traj_bondord[-1:] = bond_ord
+                  traj_bondtab = traj["bondtab"]
+                  traj_bondtab.resize((traj_bondtab.shape[0] + 1),axis=0)
+                  traj_bondtab[-1:] = bond_tab
+               else:
+                  # entry does not exist. Create it
+                  self.pdlp.add_bondtab(self.stage, self.nbondsmax, bond_tab, bond_ord)
+               # Add trajectory info
+               xyz_data = self.mol.get_xyz()
+               #
+               # add xyz data
+               #
+               if "xyz" in traj:
+                  trj_xyz = traj["xyz"]
+                  trj_xyz.resize((trj_xyz.shape[0] + 1),axis = 0)
+                  trj_xyz[-1:] = xyz_data 
+               else:
+                  xyzshape = (1,) + xyz_data.shape
+                  trj_xyz = traj.require_dataset("xyz",shape=xyzshape, dtype=xyz_data.dtype, maxshape=( (None,) + xyz_data.shape), chunks=xyzshape)
+                  trj_xyz[...] = self.mol.get_xyz()
+               velocities = False # TODO
+               if velocities:
+                   trj_vel = traj.require_dataset("vel", shape=vel.shape, dtype=vel.dtype)
+                   #trj_vel[...] = vel #TODO
            self.pdlp.close() 
        else:
            self.write_counter += 1
