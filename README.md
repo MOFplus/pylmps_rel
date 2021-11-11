@@ -54,6 +54,7 @@ was created. It can be opened with the browser of your choice
 - Roberto Amabile
 - Sandro Wieser
 - Gunnar Schmitz
+- Vanessa Angenent
 - Babak Farhadi-Jahromi
 - Larissa Schaper
 
