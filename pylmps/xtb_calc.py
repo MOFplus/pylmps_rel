@@ -20,7 +20,7 @@ import numpy as np
 import molsys
 import sys
 
-from molsys.util import pdlpio2
+from molsys.util import mfp5io
 import molsys.util.elems as elems
 
 from molsys.util.constants import bohr
@@ -42,9 +42,9 @@ class xtb_calc:
                , accuracy: float = 0.01
                , uhf: int = 0
                , verbose = 0
-               , write_pdlp_file = False
+               , write_mfp5_file = False
                , write_frequency = 100
-               , pdlpfile = None
+               , mfp5file = None
                , restart=None
                , stage = None
                ):
@@ -80,13 +80,13 @@ class xtb_calc:
 
       # set up things for integration in MD driver
       self.nbondsmax = None
-      self.write_pdlp_file = write_pdlp_file
+      self.write_mfp5_file = write_mfp5_file
       self.write_frequency = write_frequency
       self.write_counter = 1
       self.startup = True
       self.stage = stage
-      if write_pdlp_file:
-          self.pdlp = pdlpio2.pdlpio2(pdlpfile, ffe=self, restart=restart)
+      if write_mfp5_file:
+          self.mfp5 = mfp5io.mfp5io(mfp5file, ffe=self, restart=restart)
           # Get upper bound for bonds 
           if self.nbondsmax == None:
               self.nbondsmax = 0
@@ -95,7 +95,7 @@ class xtb_calc:
               self.nbondsmax /= 2
           self.nbondsmax = int(self.nbondsmax)
       else:
-          self.pdlp = None
+          self.mfp5 = None
       # set up things that do not change during the calcultion
       self.numbers   = np.array(self.mol.get_elems_number(), dtype=c_int)
       self.calc = None
@@ -151,7 +151,7 @@ class xtb_calc:
                 , 'bondorder' : res.get_bond_orders()
                 }
 
-      if self.write_pdlp_file:
+      if self.write_mfp5_file:
          self.write_frame(results)
 
       return results
@@ -162,9 +162,9 @@ class xtb_calc:
        if self.write_counter == self.write_frequency or self.startup:
            self.write_counter = 1  # Set back to zero
            self.startup = False
-           self.pdlp.open()
-           if self.stage in self.pdlp.h5file:
-               st = self.pdlp.h5file[self.stage]
+           self.mfp5.open()
+           if self.stage in self.mfp5.h5file:
+               st = self.mfp5.h5file[self.stage]
                traj = st["traj"]
                bond_order = results['bondorder']
                # Setup bondtab
@@ -180,7 +180,7 @@ class xtb_calc:
                         bond_tab[nbnd][1] = jat
                         bond_ord[nbnd] = bond_order[iat][jat]
                         nbnd += 1
-               # Add bondtab to pdlp file
+               # Add bondtab to mfp5 file
                if "bondord" in traj:
                   traj_bondord = traj["bondord"]
                   traj_bondord.resize((traj_bondord.shape[0] + 1),axis=0)
@@ -190,7 +190,7 @@ class xtb_calc:
                   traj_bondtab[-1:] = bond_tab
                else:
                   # entry does not exist. Create it
-                  self.pdlp.add_bondtab(self.stage, self.nbondsmax, bond_tab, bond_ord)
+                  self.mfp5.add_bondtab(self.stage, self.nbondsmax, bond_tab, bond_ord)
                # Add trajectory info
                xyz_data = self.mol.get_xyz()
                #
@@ -208,6 +208,6 @@ class xtb_calc:
                if velocities:
                    trj_vel = traj.require_dataset("vel", shape=vel.shape, dtype=vel.dtype)
                    #trj_vel[...] = vel #TODO
-           self.pdlp.close() 
+           self.mfp5.close() 
        else:
            self.write_counter += 1
