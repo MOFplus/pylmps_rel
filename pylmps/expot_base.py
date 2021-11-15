@@ -164,7 +164,7 @@ class expot_ase_turbomole(expot_base):
 class expot_xtb(expot_base):
 
     def __init__(self, mol, gfn_param=0,etemp=300.0,accuracy=1.0,uhf=0,verbose=0,maxiter=250
-                ,write_pdlp_file=False,write_frequency=100,pdlpfile=None,restart=None,stage=None):
+                ,write_mfp5_file=False,write_frequency=100,mfp5file=None,restart=None,stage=None):
         super(expot_xtb, self).__init__()
         self.mol = mol
         self.gfn_param = gfn_param
@@ -176,9 +176,9 @@ class expot_xtb(expot_base):
         self.periodic = mol.periodic
         self.name = "xtb"
         self.bond_order = None
-        self.write_pdlp_file = write_pdlp_file
+        self.write_mfp5_file = write_mfp5_file
         self.write_frequency = write_frequency
-        self.pdlpfile = pdlpfile
+        self.mfp5file = mfp5file
         self.restart = restart
         self.stage = stage
         return
@@ -194,9 +194,9 @@ class expot_xtb(expot_base):
                       , etemp=self.etemp
                       , verbose=self.verbose
                       , maxiter=self.maxiter
-                      , write_pdlp_file=self.write_pdlp_file
+                      , write_mfp5_file=self.write_mfp5_file
                       , write_frequency=self.write_frequency
-                      , pdlpfile=self.pdlpfile
+                      , mfp5file=self.mfp5file
                       , restart=self.restart
                       , stage=self.stage
                       )
