@@ -460,7 +460,7 @@ class pylmps(mpiobject):
         self.md_fixes = []
         # Now connect mfp5io (using mfp5io)
         if use_mfp5 and (self.mfp5 is None):
-            self.mfp5 = mfp5io.mfp5io2(self.mfp5name, ffe=self) # TODO rename when changed in molsys
+            self.mfp5 = mfp5io.mfp5io(self.mfp5name, ffe=self) # TODO rename when changed in molsys
         # set the flag
         self.is_setup = True
         # report timing
