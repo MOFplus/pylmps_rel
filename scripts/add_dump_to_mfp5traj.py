@@ -20,7 +20,7 @@ def write_cell_to_traj(traj,cell):
     tshape = traj['cell'].shape[0]
     traj['cell'].resize(tshape+1,axis=0)
     traj['cell'][-1,...] = cell
-    pdlp.flush()
+    mfp5.flush()
     return
 
 def write_xyz_to_traj(traj,xyz):
@@ -28,11 +28,11 @@ def write_xyz_to_traj(traj,xyz):
     traj['xyz'].resize(tshape+1,axis=0)
     traj['xyz'][-1,...] = xyz
     #traj['xyz'][-1,...] = m.get_xyz_from_frac(xyz)
-    pdlp.flush()
+    mfp5.flush()
     return
 
 
-print('usage: [name] [dump] [pdlp] [stagename]')
+print('usage: [name] [dump] [mfp5] [stagename]')
 
 if len(sys.argv) < 5:
     raise ValueError('Provide proper arguments!')
@@ -43,7 +43,7 @@ write_cell=True
 
 name = sys.argv[1]
 dumpf = sys.argv[2]
-pdlpf = sys.argv[3]
+mfp5f = sys.argv[3]
 stagename = sys.argv[4]
 
 # /stage/restart/cell
@@ -62,8 +62,8 @@ natoms = mb.natoms
 xyz = numpy.zeros((natoms,3),dtype=numpy.float32)
 
 
-pdlp = h5py.File(pdlpf)
-stage= pdlp.require_group(stagename)
+mfp5 = h5py.File(mfp5f)
+stage= mfp5.require_group(stagename)
 traj = stage.require_group("traj")
 
 traj.create_dataset('xyz', dtype='float32',shape=(0,natoms,3),maxshape=(None,natoms,3),chunks=(1,natoms,3))
