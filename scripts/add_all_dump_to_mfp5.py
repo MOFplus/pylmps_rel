@@ -4,7 +4,7 @@
 ###########################################################################
 #
 #  Script to batch convert multiple lammps .dump trajectory files to hdf5
-#  and store all of them in the same pdlp file (must exist beforehand)
+#  and store all of them in the same mfp5 file (must exist beforehand)
 #
 ############################################################################
 
@@ -16,17 +16,17 @@ import sys
 import molsys
 
 
-backup_pdlp=True
+backup_mfp5=True
 
 dumps = [x for x in os.listdir('.') if x.rsplit('.',1)[-1] == 'dump']
 mfpxs = [x for x in os.listdir('.') if x.rsplit('.',1)[-1] == 'mfpx']
-pdlps = [x for x in os.listdir('.') if x.rsplit('.',1)[-1] == 'pdlp']
+mfp5s = [x for x in os.listdir('.') if x.rsplit('.',1)[-1] == 'mfp5']
 
-if len(pdlps) != 1:
-    print('multiple or no pdlp(s) found, exiting... ')
+if len(mfp5s) != 1:
+    print('multiple or no mfp5(s) found, exiting... ')
     os._exit(0)
 
-pdlp = pdlps[0]
+mfp5 = mfp5s[0]
 if len(mfpxs) == 0:
     print('no mfpx found! exiting')
     os._exit(0)
@@ -45,14 +45,14 @@ if len(mfpxs) != 1:
 else:
     mfpx = mfpxs[0]
 
-if backup_pdlp is True:
+if backup_mfp5 is True:
     # do not backup if there is one already!
-    if len([x for x in os.listdir('.') if x.rsplit('.',1)[-1] == 'pdlp_keep'])   == 0:
-        os.system('cp %s %s_keep' % (pdlp,pdlp))
+    if len([x for x in os.listdir('.') if x.rsplit('.',1)[-1] == 'mfp5_keep'])   == 0:
+        os.system('cp %s %s_keep' % (mfp5,mfp5))
     
 for dump in dumps:  
     name = mfpx.rsplit('.',1)[0]
     stagename = dump.rsplit('.',1)[0]
-    s = 'add_dump_to_pdlptraj.py %s %s %s %s' % (name,dump,pdlp,stagename)
+    s = 'add_dump_to_mfp5traj.py %s %s %s %s' % (name,dump,mfp5,stagename)
     os.system(s)
     print(s)

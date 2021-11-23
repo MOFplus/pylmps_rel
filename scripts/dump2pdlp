@@ -21,17 +21,17 @@ def write_xyz_to_traj(traj,xyz):
     traj['xyz'].resize(tshape+1,axis=0)
     traj['xyz'][-1,...] = xyz
     #traj['xyz'][-1,...] = m.get_xyz_from_frac(xyz)
-    pdlp.flush()
+    mfp5.flush()
     return
 
 
-print('usage: [name] [dump] [pdlp]')
+print('usage: [name] [dump] [mfp5]')
 
 write_cell=True
 
 name = sys.argv[1]
 dumpf = sys.argv[2]
-pdlpf = sys.argv[3]
+mfp5f = sys.argv[3]
 try: 
     offset = int(sys.argv[4])
 except:
@@ -55,8 +55,8 @@ natoms = int(df.readline())
 xyz = numpy.zeros((natoms,3),dtype=numpy.float32)
 
 
-pdlp = h5py.File(pdlpf)
-stage= pdlp.require_group(stagename)
+mfp5 = h5py.File(mfp5f)
+stage= mfp5.require_group(stagename)
 traj = stage.require_group("traj")
 
 nstep_str = subprocess.getoutput("grep -A 1   'TIMESTEP' %s  | head -n 5" % (dumpf,))
