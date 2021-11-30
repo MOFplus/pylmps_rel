@@ -25,6 +25,7 @@ import molsys.util.elems as elems
 
 from molsys.util.constants import bohr
 
+import math
 
 #
 # Class definition for xtb calcaulator
@@ -113,6 +114,12 @@ class xtb_calc:
    def get_cell(self):
       return self.mol.get_cell()
 
+   def get_bond_length(self,iat,jat):
+      ri, rj, closest = self.mol.get_distvec(iat, jat)
+      r = rj-ri
+      d = np.sqrt(np.sum(r*r)) 
+      return d
+
    def calculate(self, xyz, cell):
       positions = np.array(xyz/bohr, dtype=c_double)
       if self.pbc == True:  
@@ -159,6 +166,12 @@ class xtb_calc:
 
    def write_frame(self,results):
 
+       def update_bond_order(wiberg_index,r):
+           alpha = 0.3
+           r_0 = 1.0
+           bo = wiberg_index * math.exp(-(r-r_0)/alpha) 
+           return bo  
+
        if self.write_counter == self.write_frequency or self.startup:
            self.write_counter = 1  # Set back to zero
            self.startup = False
@@ -174,11 +187,14 @@ class xtb_calc:
                natoms = self.get_natoms()
                nbnd = 0
                for iat in range(natoms):
-                  for jat in range(0,iat+1): 
-                     if bond_order[iat][jat] > bothres:
+                  for jat in range(0,iat+1):
+                     # calculate bond length
+                     bnd = self.get_bond_length(iat,jat)
+                     bo = update_bond_order(bond_order[iat][jat],bnd) 
+                     if bo > bothres:
                         bond_tab[nbnd][0] = iat
                         bond_tab[nbnd][1] = jat
-                        bond_ord[nbnd] = bond_order[iat][jat]
+                        bond_ord[nbnd] = bo
                         nbnd += 1
                # Add bondtab to mfp5 file
                if "bondord" in traj:
@@ -211,3 +227,5 @@ class xtb_calc:
            self.mfp5.close() 
        else:
            self.write_counter += 1
+
+
