@@ -413,7 +413,7 @@ class pylmps(mpiobject):
         elif self.use_ase:
             with self.timer("write data"):
                 self.ff2lmp.write_data(filename=self.data_file)
-            with self.timer.start("setup ase"):
+            with self.timer("setup ase"):
                 # in this subroutine lamps commands are issued to read the data file and start up (instead of reading a lammps input file)
                 self.setup_xtb()
         elif self.use_uff==False:
