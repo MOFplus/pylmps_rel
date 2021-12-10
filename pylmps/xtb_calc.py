@@ -120,6 +120,9 @@ class xtb_calc:
       d = np.sqrt(np.sum(r*r)) 
       return d
 
+   def get_elements(self):
+      return self.mol.get_elems()
+
    def calculate(self, xyz, cell):
       positions = np.array(xyz/bohr, dtype=c_double)
       if self.pbc == True:  
@@ -166,10 +169,37 @@ class xtb_calc:
 
    def write_frame(self,results):
 
-       def update_bond_order(wiberg_index,r):
+       def update_bond_order(wiberg_index,r,elemi,elemj):
+           bohr = 0.529177
+           # will be later moved somewhere else. Here we store the equilibirum bond info
+           # Dictionary with element types e1_e2 (e1 and e2 in alphavetical order) 
+           # followed by a list of tuples containing the tabulated data of Wiberg bond indices and equilibrium distances.
+           # 1. we find the entry for e1_e2
+           # 2. search list for tuple with the closet wiberg bond index (first entry) to given argument
+           tabulated_data = { "c_h" : [(0.99857405837699698, 2.0723),(0.98377257130473217,2.0790) ] 
+                            , "o_o" : [(1.4999999999999820,  2.7590)]
+                            , "c_c" : [(2.9979458557061029,2.2559),(2.0372552164634392,2.4876)]
+                            , "c_o" : [(1.0103530950900168,2.6576),(1.0042166955474088,2.6851), (1.8711324229829684,2.3046)]
+                            , "h_o" : [(0.92103774706803487,1.8350),(0.90664162691079231,1.8196)]
+                            , "c_n" : [(2.8038418306284827,2.2130),(1.1418104928922275,2.6377),(1.2686688800681707,2.5832) ]
+                            , "h_n" : [(0.94056613311717330,1.9257)]
+                            } 
            alpha = 0.3
-           r_0 = 1.0
-           bo = wiberg_index * math.exp(-(r-r_0)/alpha) 
+           # decode bond info
+           lstelem =  sorted([elemi,elemj], key=str.lower)
+           identifier = str(lstelem[0]).lower() + "_" + str(lstelem[1]).lower()
+           if identifier in tabulated_data:
+               r_0 = 1.0
+               dist = 999.99
+               for data in tabulated_data[identifier]:
+                   if abs(data[0] - wiberg_index) < dist:
+                       r_0 = data[1] * bohr
+                       dist = abs(data[0] - wiberg_index) 
+           else:
+               # default (probably not good in most cases)
+               print("WARNING: Could not find pre-tabulated data for bond order for identifier %s" % identifier) 
+               r_0 = 1.0
+           bo = wiberg_index * math.exp(-abs(r-r_0)/alpha) 
            return bo  
 
        if self.write_counter == self.write_frequency or self.startup:
@@ -180,6 +210,7 @@ class xtb_calc:
                st = self.mfp5.h5file[self.stage]
                traj = st["traj"]
                bond_order = results['bondorder']
+               elems = self.get_elements()
                # Setup bondtab
                bond_tab = np.zeros((self.nbondsmax,2),dtype=int)
                bond_ord = np.zeros((self.nbondsmax))
@@ -190,7 +221,7 @@ class xtb_calc:
                   for jat in range(0,iat+1):
                      # calculate bond length
                      bnd = self.get_bond_length(iat,jat)
-                     bo = update_bond_order(bond_order[iat][jat],bnd) 
+                     bo = update_bond_order(bond_order[iat][jat],bnd,elems[iat],elems[jat]) 
                      if bo > bothres:
                         bond_tab[nbnd][0] = iat
                         bond_tab[nbnd][1] = jat
