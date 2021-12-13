@@ -201,6 +201,8 @@ class expot_xtb(expot_base):
                       , stage=self.stage
                       )
         self.pprint("An xTB external potential was added")
+        print("Periodic Boundary Conditions:") 
+        print(self.periodic)
         return
 
     def calc_energy_force(self):
@@ -211,7 +213,7 @@ class expot_xtb(expot_base):
         # xTB uses a.u. as units so we need to convert
         #
         self.energy  = results['energy'] / kcalmol
-        self.force   = -results['gradient'] / kcalmol / bohr
+        self.force   = -results['gradient'] / kcalmol * bohr
         self.bond_order = results['bondorder']
         return self.energy, self.force
 
@@ -220,6 +222,10 @@ class expot_xtb(expot_base):
         self.bond_order = results['bondorder']
         return self.bond_order
 
+
+    def set_stage(self,stage):
+        self.gfn.set_stage(stage)
+        return
 
 """
    As an illustration this is a derived external potential that just fixes one interatomic distance by a harmonic potential
