@@ -202,7 +202,7 @@ class pylmps(mpiobject):
                     kint = 0.0
                 else:
                     kint = kfin
-                rest_string += " bond %d %d %10.3f %10.3f %10.3f" % (r[0]+1, r[1]+1, kint, kfin, r0)
+                rest_string += " bond %d %d %10.3f %10.3f %10.3f %10.3f" % (r[0]+1, r[1]+1, kint, kfin, r0, r0)
             elif len(r) == 3:
                 a0 = rp[1]
                 kfin = rp[0]
