@@ -193,7 +193,7 @@ class expot_xtb(expot_base):
         self.accuracy = accuracy
         self.verbose = verbose
         self.maxiter = maxiter     
-        if periodic = None:
+        if periodic == None:
             self.periodic = mol.periodic
         else:
             self.periodic = periodic
