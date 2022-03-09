@@ -1481,6 +1481,43 @@ class pylmps(mpiobject):
         return
 
  
+################################# addtional helper classes ###################################################
+
+class mol_coms:
+    """class to keep computes for a COMs of molecules 
+
+    Do we need a class here?? not sure ... might not hurt, though
+    """
+
+    def __init__(self, pl, name):
+        """generate a COM object for a set of molecules, defined as a molsys group
+
+        Args:
+            pl (pylmps object): parent pylmps object
+            name (string): name of the molsys group (must be a molecules mode) -> fixes and computes are named accordingly
+        """
+        self.pl = pl
+        self.name = name
+        mol = self.pl.mol
+        assert name in mol.groups.groupnames, "%s not defined as a group in the mol object" % name
+        assert mol.groups.get_mode(name) == "molecules", "group must be defined as molecules"
+        assert self.pl.is_setup, "pylmps must be setup before generating a mol_coms object"
+        # define group 
+        self.pl.lmps.command("group %s id %s" % (self.name + "g", mol.groups.get_flat_string(name)))
+        # define chunk compute (nchunk is fixed)
+        self.pl.lmps.command("compute %s %s chunk/atom molecule nchunk once compress yes" % (self.name + "c", self.name + "g"))
+        # get the number of molecules in this mol_coms
+        self.nmols = int(self.pl.lmps.numpy.extract_compute(self.name + "c", 0, 0))
+        # sanity check: this should be identical to the number of subgroups in the group object
+        assert self.nmols == mol.groups.get_N(name), "Number of molecules in lammps chunk/atoms not equal to molsys groups"
+        # define compute of coms
+        self.pl.lmps.command("compute %s %s com/chunk %s" % (self.name + "_com", self.name + "g", self.name + "c"))
+        return
+
+    def get_coms(self):
+        return self.pl.lmps.numpy.extract_compute(self.name + "_com", 0, 2)
+
+
 
 
 
