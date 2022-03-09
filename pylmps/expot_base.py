@@ -163,8 +163,28 @@ class expot_ase_turbomole(expot_base):
 
 class expot_xtb(expot_base):
 
-    def __init__(self, mol, gfn_param=0,etemp=300.0,accuracy=1.0,uhf=0,verbose=0,maxiter=250
+    def __init__(self, mol, periodic=None, gfn_param=0, etemp=300.0, accuracy=1.0, uhf=0, verbose=0, maxiter=250
                 ,write_mfp5_file=False,write_frequency=100,mfp5file=None,restart=None,stage=None):
+        """constructor for xTB external potential
+        
+        This will construct an external potential based on the xtb program to be used inside LAMMPS       
+ 
+        Args:
+            mol (molsys object): molecular system 
+            periodic (boolean, optional): Sets if we have a periodic system. If this argument is set to None periodicity is extracted from the mol object
+            gfn_param (int, optional): GFN parameterization. Possible values (-1,0,1,2) -1 is the GFN-FF force field
+            etemp (float, optional): Electronic temperature. Defaults to 300 K
+            accuracy (float, optional): accuracy setting. Defaults to 1.0 (default in xtb)
+            uhf (int, optional): Number of unpaired electrons
+            verbose (int, optional): Print level. Possible values 0,1,2. Defaults to 0 (silent mode)
+            maxiter (int, optional): Maximum number of iterations in the self consisting charge cycles. Defaults to 250
+            write_mfp5_file (boolean, optional): If a mfp5 should be written? Defaults to False 
+            write_frequency (int, optional): If write_mfp5_file = True it determine how often the coordinates should be dumped
+            mfp5file (mfp5file object, optional): The mfp5 file handeler used
+            restart (boolean, optional): Determines if this is a restart
+            stage (string, optional): Determines the current stage we are in 
+
+        """
         super(expot_xtb, self).__init__()
         self.mol = mol
         self.gfn_param = gfn_param
@@ -173,7 +193,10 @@ class expot_xtb(expot_base):
         self.accuracy = accuracy
         self.verbose = verbose
         self.maxiter = maxiter     
-        self.periodic = mol.periodic
+        if periodic = None:
+            self.periodic = mol.periodic
+        else:
+            self.periodic = periodic
         self.name = "xtb"
         self.bond_order = None
         self.write_mfp5_file = write_mfp5_file
@@ -213,7 +236,7 @@ class expot_xtb(expot_base):
         # xTB uses a.u. as units so we need to convert
         #
         self.energy  = results['energy'] / kcalmol
-        self.force   = -results['gradient'] / kcalmol * bohr
+        self.force   = -results['gradient'] / kcalmol / bohr
         self.bond_order = results['bondorder']
         return self.energy, self.force
 

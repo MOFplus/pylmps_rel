@@ -44,7 +44,7 @@ class xtb_calc:
                , uhf: int = 0
                , verbose = 0
                , write_mfp5_file = False
-               , write_frequency = 100
+               , write_frequency = 1
                , mfp5file = None
                , restart=None
                , stage = None
