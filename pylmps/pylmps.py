@@ -705,13 +705,29 @@ class pylmps(mpiobject):
         fxyz.shape=(self.natoms,3)
         return fxyz
         
-    def get_xyz(self):
+    def get_xyz(self, unwrapped=False):
         """
         get the xyz position as a numpy array
         """
         xyz = np.ctypeslib.as_array(self.lmps.gather_atoms("x",1,3))
         xyz.shape=(self.natoms,3)
+        if unwrapped:
+            if self.bcond == 0:
+                # not peridoic .. do nothing
+                return xyz
+            assert self.bcond != 3, "Please implmenent unwrapping for triclinic cells"
+            img = self.get_image()
+            celld = self.get_cell().diagonal()
+            xyz += img*celld
         return xyz
+
+    def get_image(self):
+        """
+        get the image index as a numpy int array
+        """
+        image = np.ctypeslib.as_array(self.lmps.gather_atoms("image",0,3))
+        image.shape=(self.natoms,3)
+        return image
 
     def get_vel(self):
         """
@@ -1480,6 +1496,11 @@ class pylmps(mpiobject):
         self.write_part(self.name + "_neb_final.xyz")
         return
 
+
+    ######################  get mol_coms class ###############################################################
+    def get_mol_coms(self, name):
+        return mol_coms(self, name)
+
  
 ################################# addtional helper classes ###################################################
 
@@ -1501,7 +1522,7 @@ class mol_coms:
         mol = self.pl.mol
         assert name in mol.groups.groupnames, "%s not defined as a group in the mol object" % name
         assert mol.groups.get_mode(name) == "molecules", "group must be defined as molecules"
-        assert self.pl.is_setup, "pylmps must be setup before generating a mol_coms object"
+        # assert self.pl.is_setup, "pylmps must be setup before generating a mol_coms object" # can not assert this becasue it can be called within setup where the flag is not set, yet
         # define group 
         self.pl.lmps.command("group %s id %s" % (self.name + "g", mol.groups.get_flat_string(name)))
         # define chunk compute (nchunk is fixed)

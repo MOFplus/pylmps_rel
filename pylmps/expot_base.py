@@ -35,6 +35,8 @@ class expot_base(mpiobject):
         self.name = "base"
         self.is_expot = True
         self.expot_time = 0.0
+        # get xyz wrapped or unwrapped
+        self.unwrapped = False
         return
 
     def setup(self, pl):
@@ -59,10 +61,9 @@ class expot_base(mpiobject):
         tstart = time.time()
         lmps = lammps(ptr=lmps)
         # get the current atom positions
-        self.xyz = np.ctypeslib.as_array(lmps.gather_atoms("x",1,3))
+        self.xyz = self.pl.get_xyz(unwrapped=self.unwrapped)
         # get current cell
         self.cell = self.pl.get_cell()
-        self.xyz.shape=(self.natoms,3)
         # calculate energy and force
         self.calc_energy_force()
         # distribute the forces back
