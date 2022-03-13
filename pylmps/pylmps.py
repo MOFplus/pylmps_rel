@@ -242,7 +242,7 @@ class pylmps(mpiobject):
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", mfp5=None, restart=None, restart_vel=False, restart_ff=True, pressure_bath_atype=None,
-            logfile = 'none', bcond=3, uff="UFF4MOF", use_mfp5=False, reaxff="cho", kspace_style='ewald',
+            logfile = 'none', bcond=3, uff="UFF4MOF", use_mfp5=True, reaxff="cho", kspace_style='ewald',
             kspace=True, silent=False, noheader=False,  **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
         
@@ -321,7 +321,7 @@ class pylmps(mpiobject):
         else:
             if restart is not None:
                 # The mol object should be read from the mfp5 file
-                self.mfp5 = mfp5io.mfp5io(self.mfp5name, ffe=self, restart=restart)   # TODO rename when changed in molsys
+                self.mfp5 = mfp5io.mfp5io(self.mfp5name, ffe=self, restart=restart)  
                 if restart_vel is True:
                     self.mol, restart_vel  = self.mfp5.get_mol_from_system(vel=True, restart_ff=restart_ff)
                 else:
@@ -460,7 +460,7 @@ class pylmps(mpiobject):
         self.md_fixes = []
         # Now connect mfp5io (using mfp5io)
         if use_mfp5 and (self.mfp5 is None):
-            self.mfp5 = mfp5io.mfp5io(self.mfp5name, ffe=self) # TODO rename when changed in molsys
+            self.mfp5 = mfp5io.mfp5io(self.mfp5name, ffe=self) 
         # set the flag
         self.is_setup = True
         # report timing
@@ -1187,7 +1187,7 @@ class pylmps(mpiobject):
 
     def MD_init(self, stage, T = None, p=None, startup = False, startup_seed = 42, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=[], rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
-            colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False, dump_thermo=True, 
+            colvar = None, mttk_volconstraint="no", log=False, dump=False, append=False, dump_thermo=True, 
             wrap = True, additional_thermo_output=[]):
         """Defines the MD settings
         
@@ -1537,6 +1537,8 @@ class mol_coms:
 
     def get_coms(self):
         return self.pl.lmps.numpy.extract_compute(self.name + "_com", 0, 2)
+
+        
 
 
 
