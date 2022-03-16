@@ -243,7 +243,7 @@ class pylmps(mpiobject):
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", mfp5=None, restart=None, restart_vel=False, restart_ff=True, pressure_bath_atype=None,
             logfile = 'none', bcond=3, uff="UFF4MOF", use_mfp5=False, reaxff="cho", kspace_style='ewald',
-            kspace=True, silent=False, noheader=False,  **kwargs):
+            kspace=True, silent=False, noheader=False, use_newexpot=False,  **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
         
             any keyword arguments known to control will be set to control
@@ -267,6 +267,7 @@ class pylmps(mpiobject):
                 kspace_prec (float), defaults to 1e-6: accuracy setting for the kspace method (https://lammps.sandia.gov/doc/kspace_style.html)
                 silent (bool, optional), if True do not report energies, defaults to False
                 noheader (bool, optional), if True, do not output the header in the lammps input files, defaults to False
+                use_newexpot (bool, optional), if True triggers the usage of the nex external potential framework in lammps
         """
         self.timer.start()
         # put all known kwargs into self.control
@@ -446,9 +447,16 @@ class pylmps(mpiobject):
             # run the expot's setup with self as an argument --> you have access to all info within the mol object
             expot.setup(self)
             fix_id = "expot_"+expot.name
-            self.lmps.command("fix %s all python/invoke 1 post_force %s" % (fix_id, callback_name))
-            self.lmps.command("fix_modify %s energy yes" % fix_id)
-            self.add_ename(expot.name, "f_"+fix_id)
+            if use_newexpot:
+                self.lmps.command("fix %s all external pf/callback 1 1" % (fix_id))
+                self.lmps.command("fix_modify %s energy yes" % fix_id)
+                self.add_ename(expot.name, "f_"+fix_id)
+                ano_callback = lambda lmp, ntimestep, nlocal, tag, x, f  : expot.callback_new(lmp,ntimestep,nlocal,tag,x,f) 
+                self.lmps.set_fix_external_callback(fix_id,ano_callback,self.lmps)
+            else:
+                self.lmps.command("fix %s all python/invoke 1 post_force %s" % (fix_id, callback_name))
+                self.lmps.command("fix_modify %s energy yes" % fix_id)
+                self.add_ename(expot.name, "f_"+fix_id)
             self.pprint("External Potential %s is set up as fix %s" % (expot.name, fix_id))
         # compute energy of initial config
         if restart_vel is not False:
