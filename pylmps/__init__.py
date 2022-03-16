@@ -4,7 +4,7 @@ from __future__ import absolute_import
 import os
 import subprocess
 
-from .pylmps import pylmps
+from .pylmps import pylmps, mol_coms
 from .expot_base import expot_base, expot_test, expot_ase, expot_ase_turbomole, expot_xtb
 
 def git_revision_hash():
@@ -26,4 +26,4 @@ rev_no, commit = git_revision_hash()
 __version_info__ = (0, 0, rev_no, "%s"%commit)
 __version__ = "%i.%i.%i.%s"%__version_info__
 
-__all__=["pylmps", "expot_base", "expot_test", "expot_ase", "expot_xtb"]
+__all__=["pylmps", "mol_coms", "expot_base", "expot_test", "expot_ase", "expot_xtb"]

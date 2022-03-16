@@ -242,7 +242,7 @@ class pylmps(mpiobject):
         return
 
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", mfp5=None, restart=None, restart_vel=False, restart_ff=True, pressure_bath_atype=None,
-            logfile = 'none', bcond=3, uff="UFF4MOF", use_mfp5=False, reaxff="cho", kspace_style='ewald',
+            logfile = 'none', bcond=3, uff="UFF4MOF", use_mfp5=True, reaxff="cho", kspace_style='ewald',
             kspace=True, silent=False, noheader=False, use_newexpot=False,  **kwargs):
         """ the setup creates the data structure necessary to run LAMMPS
         
@@ -322,7 +322,7 @@ class pylmps(mpiobject):
         else:
             if restart is not None:
                 # The mol object should be read from the mfp5 file
-                self.mfp5 = mfp5io.mfp5io(self.mfp5name, ffe=self, restart=restart)   # TODO rename when changed in molsys
+                self.mfp5 = mfp5io.mfp5io(self.mfp5name, ffe=self, restart=restart)  
                 if restart_vel is True:
                     self.mol, restart_vel  = self.mfp5.get_mol_from_system(vel=True, restart_ff=restart_ff)
                 else:
@@ -468,7 +468,7 @@ class pylmps(mpiobject):
         self.md_fixes = []
         # Now connect mfp5io (using mfp5io)
         if use_mfp5 and (self.mfp5 is None):
-            self.mfp5 = mfp5io.mfp5io(self.mfp5name, ffe=self) # TODO rename when changed in molsys
+            self.mfp5 = mfp5io.mfp5io(self.mfp5name, ffe=self) 
         # set the flag
         self.is_setup = True
         # report timing
@@ -713,13 +713,29 @@ class pylmps(mpiobject):
         fxyz.shape=(self.natoms,3)
         return fxyz
         
-    def get_xyz(self):
+    def get_xyz(self, unwrapped=False):
         """
         get the xyz position as a numpy array
         """
         xyz = np.ctypeslib.as_array(self.lmps.gather_atoms("x",1,3))
         xyz.shape=(self.natoms,3)
+        if unwrapped:
+            if self.bcond == 0:
+                # not peridoic .. do nothing
+                return xyz
+            assert self.bcond != 3, "Please implmenent unwrapping for triclinic cells"
+            img = self.get_image()
+            celld = self.get_cell().diagonal()
+            xyz += img*celld
         return xyz
+
+    def get_image(self):
+        """
+        get the image index as a numpy int array
+        """
+        image = np.ctypeslib.as_array(self.lmps.gather_atoms("image",0,3))
+        image.shape=(self.natoms,3)
+        return image
 
     def get_vel(self):
         """
@@ -1179,7 +1195,7 @@ class pylmps(mpiobject):
 
     def MD_init(self, stage, T = None, p=None, startup = False, startup_seed = 42, ensemble='nve', thermo=None, 
             relax=(0.1,1.), traj=[], rnstep=100, tnstep=100,timestep = 1.0, bcond = None,mttkbcond='tri', 
-            colvar = None, mttk_volconstraint="no", log = True, dump=True, append=False, dump_thermo=True, 
+            colvar = None, mttk_volconstraint="no", log=False, dump=False, append=False, dump_thermo=True, 
             wrap = True, additional_thermo_output=[]):
         """Defines the MD settings
         
@@ -1488,7 +1504,51 @@ class pylmps(mpiobject):
         self.write_part(self.name + "_neb_final.xyz")
         return
 
+
+    ######################  get mol_coms class ###############################################################
+    def get_mol_coms(self, name):
+        return mol_coms(self, name)
+
  
+################################# addtional helper classes ###################################################
+
+class mol_coms:
+    """class to keep computes for a COMs of molecules 
+
+    Do we need a class here?? not sure ... might not hurt, though
+    """
+
+    def __init__(self, pl, name):
+        """generate a COM object for a set of molecules, defined as a molsys group
+
+        Args:
+            pl (pylmps object): parent pylmps object
+            name (string): name of the molsys group (must be a molecules mode) -> fixes and computes are named accordingly
+        """
+        self.pl = pl
+        self.name = name
+        mol = self.pl.mol
+        assert name in mol.groups.groupnames, "%s not defined as a group in the mol object" % name
+        assert mol.groups.get_mode(name) == "molecules", "group must be defined as molecules"
+        # assert self.pl.is_setup, "pylmps must be setup before generating a mol_coms object" # can not assert this becasue it can be called within setup where the flag is not set, yet
+        # define group 
+        self.pl.lmps.command("group %s id %s" % (self.name + "g", mol.groups.get_flat_string(name)))
+        # define chunk compute (nchunk is fixed)
+        self.pl.lmps.command("compute %s %s chunk/atom molecule nchunk once compress yes" % (self.name + "c", self.name + "g"))
+        # get the number of molecules in this mol_coms
+        self.nmols = int(self.pl.lmps.numpy.extract_compute(self.name + "c", 0, 0))
+        # sanity check: this should be identical to the number of subgroups in the group object
+        assert self.nmols == mol.groups.get_N(name), "Number of molecules in lammps chunk/atoms not equal to molsys groups"
+        # define compute of coms
+        self.pl.lmps.command("compute %s %s com/chunk %s" % (self.name + "_com", self.name + "g", self.name + "c"))
+        return
+
+    def get_coms(self):
+        return self.pl.lmps.numpy.extract_compute(self.name + "_com", 0, 2)
+
+        
+
+
 
 
 
