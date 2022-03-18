@@ -1400,7 +1400,7 @@ class pylmps(mpiobject):
 
     def TEMPER_init(self, stage, T_low, T_high, startup = True, startup_seed = 42,
             relax=(0.1,), traj=[], tnstep=100, timestep=1.0, bcond = None, append=False, dump_thermo=True, 
-            additional_thermo_output=[]):
+            additional_thermo_output=[], log=True, dump=True):
         """ Defines the TEMPER settings for replica excahnge simulations
         
         TODO
@@ -1409,7 +1409,10 @@ class pylmps(mpiobject):
         # check that we run with partitions
         assert self.partitions != None,  "Partitions needed for a TEMPER run"
         # stage is new and we need to define it and set it up .. the stage gets _pN appended where N is the partition number
-        self.temper_stage = stage + "_p%d" % self.part_rank
+        # NOTE: part_rank is the rank within each partition and part_num the partition number
+        self.temper_stage = stage + "_p%d" % self.part_num
+        if log:
+            self.lmps.command('log %s/%s.log' % (self.rundir, self.temper_stage))
         # do general setup
         if bcond == None:
             bcond = bcond_map[self.bcond]
@@ -1429,7 +1432,7 @@ class pylmps(mpiobject):
         TT_string = " ".join([("%10.3f" % t) for t in self.TT])
         print ("TEMPER run at tempertures: %s" % TT_string)
         self.lmps.command("variable t world %s" % TT_string)
-        T = self.TT[self.part_rank]
+        T = self.TT[self.part_num]
         # do velocity startup ... start up each temperature
         if startup:
             self.lmps.command('velocity all create %12.6f %d rot yes dist gaussian' % (T, startup_seed))
@@ -1441,8 +1444,14 @@ class pylmps(mpiobject):
         thermo_style += ["spcpu"]
         thermo_style_string = "thermo_style custom step " + " ".join(thermo_style)
         self.lmps.command(thermo_style_string)
-        # now the thermo_style is defined and the length is known so we can setup the mfp5 dump  
-        if self.mfp5 is not None:
+        # now the thermo_style is defined and the length is known so we can setup the mfp5 dump 
+        # generate regular dump (ASCII)
+        if dump is True:
+            self.lmps.command('dump %s all custom %i %s.dump id type element x y z' % (self.temper_stage+"_dump", tnstep, self.temper_stage))
+            plmps_elems = self.ff2lmp.plmps_elems
+            self.lmps.command('dump_modify %s element %s' % (self.temper_stage+"_dump", " ".join(plmps_elems)))
+            self.md_dumps.append(self.temper_stage+"_dump")
+        if self.mfp5 != None:
             # ok, we will also write to the mfp5 file
             if append:
                 raise IOError("TBI")
@@ -1457,11 +1466,6 @@ class pylmps(mpiobject):
                 traj_string = " ".join(traj + ["restart"])
                 if dump_thermo:
                     traj_string += " thermo"
-                if self.use_reaxff:
-                    if self.control["reaxff_bondfile"] is not None:
-                        # add the datasets for bondtab and bondorder to the current stage
-                        self.mfp5.add_bondtab(self.temper_stage, self.nbondsmax)
-                        traj_string += " bond"
                 # now close the hdf5 file becasue it will be written within lammps
                 self.mfp5.close()
                 # print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
