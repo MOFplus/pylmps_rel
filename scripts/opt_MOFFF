@@ -14,12 +14,17 @@ import pylmps
 
 fname = sys.argv[1]
 name = fname.rsplit('.',1)[0]
-print('name:', name)
 
+assert os.path.isfile(name + ".mfpx")
+if os.path.isfile(name + ".ric") and os.path.isfile(name + ".par"):
+    # use exisitng FF
+    ff = "file"
+else:
+    ff = "MOF-FF"
 
 pl = pylmps.pylmps(name)
 
-pl.setup(local=True, ff="MOF-FF")
+pl.setup(local=True, ff=ff)
 
 pl.MIN(0.1)
 
