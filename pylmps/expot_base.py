@@ -72,6 +72,61 @@ class expot_base(mpiobject):
         self.expot_time += time.time() - tstart 
         return self.energy
 
+    def callback_new(self,lmp, ntimestep, nlocal, tag, x, f):
+
+        """The callback function called by lammps .. should not be changed
+        """
+        root = 0
+
+        # TODO Not really MPI parallel yet:
+        # -> Forces need to be scattered to all slaves
+        tstart = time.time()
+        #
+        # get the current atom positions
+        # 
+        #  -> gather atom positions from all nodes on master
+        # 
+        sendbuf1 = np.ctypeslib.as_array(x)
+        sendbuf2 = np.ctypeslib.as_array(tag)
+        sendcounts1 = np.array(self.mpi_comm.gather(sendbuf1.size, root))
+        sendcounts2 = np.array(self.mpi_comm.gather(sendbuf2.size, root))
+        if self.is_master:
+            xyz  = np.empty(sum(sendcounts1), dtype=np.float64)
+            tags = np.empty(sum(sendcounts2), dtype=np.int32)
+        else:
+            xyz  = None
+            tags = None
+        self.mpi_comm.Gatherv(sendbuf=sendbuf1, recvbuf=(xyz,  sendcounts1), root=root)
+        self.mpi_comm.Gatherv(sendbuf=sendbuf2, recvbuf=(tags, sendcounts2), root=root)
+        # get current cell
+        self.cell = self.pl.get_cell()
+        self.xyz = np.ctypeslib.as_array(xyz)
+        self.xyz.shape=(self.natoms,3)
+        # Reorder according to tags
+        idx = tags - 1
+        self.xyz = self.xyz[idx]
+        # calculate energy and force
+        if self.is_master:
+            self.calc_energy_force()
+            forces = np.ctypeslib.as_array(self.force)
+        else:
+            forces = None
+        # scatter forces to nodes
+        forces_local = np.zeros(sendbuf1.size,dtype=np.float64)
+        self.mpi_comm.Scatterv(sendbuf=forces, recvbuf=(forces_local, sendcounts1), root=root) 
+        forces_local.shape=(nlocal,3)
+        # distribute the forces back
+        for i in range(nlocal):
+           f[i][0] = forces_local[i][0] 
+           f[i][1] = forces_local[i][1] 
+           f[i][2] = forces_local[i][2] 
+        self.step += 1
+        self.expot_time += time.time() - tstart 
+        if self.is_master:
+            # only master adds total energy to the fix
+            lmp.fix_external_set_energy_global("expot_" + self.name, self.energy)
+        return 
+
     def test_deriv(self, delta=0.0001, verbose=True):
         """test the analytic forces by numerical differentiation
 
