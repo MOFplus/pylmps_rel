@@ -59,7 +59,7 @@ class pylmps(mpiobject):
         # handle partitions .. if None do nothing, if not an integer must be given
         #                      and the number of MPI ranks must be a multiple of partitions
         self.partitions = partitions
-        if partitions is not None:           
+        if partitions != None:           
             procperpart = int(self.mpi_size/partitions)
             assert procperpart > 0
             assert self.mpi_size%procperpart == 0
@@ -1401,6 +1401,107 @@ class pylmps(mpiobject):
             self.lmps.command('reset_timestep 0')
         self.unset_restraint()
         return
+
+    ############ experimental imp of TEMPER for replica excahnge dynamics ###############################################
+
+    # currently n NPT and pressure .. no reaxff/xtb etc
+
+    def TEMPER_init(self, stage, T_low, T_high, startup = True, startup_seed = 42,
+            relax=(0.1,), traj=[], tnstep=100, timestep=1.0, bcond = None, append=False, dump_thermo=True, 
+            additional_thermo_output=[], log=True, dump=True):
+        """ Defines the TEMPER settings for replica excahnge simulations
+        
+        TODO
+
+        """
+        # check that we run with partitions
+        assert self.partitions != None,  "Partitions needed for a TEMPER run"
+        # stage is new and we need to define it and set it up .. the stage gets _pN appended where N is the partition number
+        # NOTE: part_rank is the rank within each partition and part_num the partition number
+        self.temper_stage = stage + "_p%d" % self.part_num
+        if log:
+            self.lmps.command('log %s/%s.log' % (self.rundir, self.temper_stage))
+        # do general setup
+        if bcond == None:
+            bcond = bcond_map[self.bcond]
+        assert bcond in ['non', 'iso', 'aniso', 'tri']
+        conv_relax = 1000/timestep 
+        # first specify the timestep in femtoseconds
+        self.lmps.command('timestep %12.6f' % timestep)
+        # manage output, this is the setup for the output written to screen and log file
+        # build the thermo_style list (sent to to lammps as thermos tyle commend at the end)
+        thermo_style = [self.evars[n] for n in self.enames]
+        thermo_style += [self.evars["epot"]]
+        # this is md .. add some crucial stuff
+        thermo_style += ["ke", "etotal", "temp", "press", "vol"]
+        # get temperatures to run at
+        delta_T = (T_high - T_low) / (self.partitions-1)
+        self.TT = [(T_low + i * delta_T) for i in range(self.partitions)]
+        TT_string = " ".join([("%10.3f" % t) for t in self.TT])
+        print ("TEMPER run at tempertures: %s" % TT_string)
+        self.lmps.command("variable t world %s" % TT_string)
+        T = self.TT[self.part_num]
+        # do velocity startup ... start up each temperature
+        if startup:
+            self.lmps.command('velocity all create %12.6f %d rot yes dist gaussian' % (T, startup_seed))
+        # apply fix    
+        self.lmps.command('fix %s all nvt temp %12.6f %12.6f %i' % (self.temper_stage, T, T, conv_relax*relax[0]))
+        self.md_fixes = [self.temper_stage]
+        # now define what scalar values should be written to the log file
+        thermo_style += additional_thermo_output
+        thermo_style += ["spcpu"]
+        thermo_style_string = "thermo_style custom step " + " ".join(thermo_style)
+        self.lmps.command(thermo_style_string)
+        # now the thermo_style is defined and the length is known so we can setup the mfp5 dump 
+        # generate regular dump (ASCII)
+        if dump is True:
+            self.lmps.command('dump %s all custom %i %s.dump id type element x y z' % (self.temper_stage+"_dump", tnstep, self.temper_stage))
+            plmps_elems = self.ff2lmp.plmps_elems
+            self.lmps.command('dump_modify %s element %s' % (self.temper_stage+"_dump", " ".join(plmps_elems)))
+            self.md_dumps.append(self.temper_stage+"_dump")
+        if self.mfp5 != None:
+            # ok, we will also write to the mfp5 file
+            if append:
+                raise IOError("TBI")
+            else:
+                self.mfp5.add_stage(self.temper_stage)
+                if dump_thermo:
+                    thermo_values = ["step"] + thermo_style
+                else:
+                    thermo_values = []
+                self.mfp5.prepare_stage(self.temper_stage, traj, tnstep, tstep=timestep/1000.0, thermo_values=thermo_values)
+                # now create the dump
+                traj_string = " ".join(traj + ["restart"])
+                if dump_thermo:
+                    traj_string += " thermo"
+                # now close the hdf5 file becasue it will be written within lammps
+                self.mfp5.close()
+                # print("dump %s all pdlp %i %s stage %s %s" % (stage+"_pdlp", tnstep, self.pdlp.fname, stage, traj_string))
+                self.lmps.command("dump %s all mfp5 %i %s stage %s %s " % (self.temper_stage+"_mfp5", tnstep, self.mfp5.fname, self.temper_stage, traj_string))
+                self.md_dumps.append(self.temper_stage+"_mfp5")
+        return
+
+    def TEMPER_run(self, nsteps, swapsteps, seed1=1234, seed2=456, printout=100, clear_dumps_fixes=True):
+        #assert len(self.md_fixes) > 0
+        self.lmps.command('thermo %i' % printout)
+        # run
+        T = self.TT[self.part_rank]
+        self.lmps.command("temper %d %d %10.5f %s %d %d" % (nsteps, swapsteps, T, self.temper_stage, seed1, seed2))
+
+        if clear_dumps_fixes:
+            for fix in self.md_fixes:
+                self.lmps.command('unfix %s' % fix)
+            self.md_fixes = []
+            for dump in self.md_dumps:
+                self.lmps.command('undump %s' % dump)
+            self.md_dumps = []
+            self.lmps.command('reset_timestep 0')
+        self.unset_restraint()
+        return
+
+
+
+
 
 ### Johannes constD stuff
 
