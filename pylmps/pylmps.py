@@ -1409,7 +1409,7 @@ class pylmps(mpiobject):
     def TEMPER_init(self, stage, T_low, T_high, startup = True, startup_seed = 42,
             relax=(0.1,), traj=[], tnstep=100, timestep=1.0, bcond = None, append=False, dump_thermo=True, 
             additional_thermo_output=[], log=True, dump=True):
-        """ Defines the TEMPER settings for replica excahnge simulations
+        """ Defines the TEMPER settings for replica exchange simulations
         
         TODO
 
@@ -1438,14 +1438,12 @@ class pylmps(mpiobject):
         delta_T = (T_high - T_low) / (self.partitions-1)
         self.TT = [(T_low + i * delta_T) for i in range(self.partitions)]
         TT_string = " ".join([("%10.3f" % t) for t in self.TT])
-        print ("TEMPER run at tempertures: %s" % TT_string)
         self.lmps.command("variable t world %s" % TT_string)
-        T = self.TT[self.part_num]
         # do velocity startup ... start up each temperature
         if startup:
-            self.lmps.command('velocity all create %12.6f %d rot yes dist gaussian' % (T, startup_seed))
+            self.lmps.command('velocity all create $t %d rot yes dist gaussian' % (startup_seed))
         # apply fix    
-        self.lmps.command('fix %s all nvt temp %12.6f %12.6f %i' % (self.temper_stage, T, T, conv_relax*relax[0]))
+        self.lmps.command('fix %s all nvt temp $t $t %i' % (self.temper_stage, conv_relax*relax[0]))
         self.md_fixes = [self.temper_stage]
         # now define what scalar values should be written to the log file
         thermo_style += additional_thermo_output
@@ -1461,6 +1459,7 @@ class pylmps(mpiobject):
             self.md_dumps.append(self.temper_stage+"_dump")
         if self.mfp5 != None:
             # ok, we will also write to the mfp5 file
+            # TBI ... mfp5 not working properly with partitions .. need to fix the communicator part
             if append:
                 raise IOError("TBI")
             else:
@@ -1481,13 +1480,14 @@ class pylmps(mpiobject):
                 self.md_dumps.append(self.temper_stage+"_mfp5")
         return
 
-    def TEMPER_run(self, nsteps, swapsteps, seed1=1234, seed2=456, printout=100, clear_dumps_fixes=True):
+    def TEMPER_run(self, nheatsteps, nsteps, swapsteps, seed1=1234, seed2=456, printout=100, clear_dumps_fixes=True):
         #assert len(self.md_fixes) > 0
         self.lmps.command('thermo %i' % printout)
+        # heat up for nheatsteps (normal MD without switching replica)
+        if nheatsteps > 0:
+            self.lmps.command("run %d" % nheatsteps)
         # run
-        T = self.TT[self.part_rank]
-        self.lmps.command("temper %d %d %10.5f %s %d %d" % (nsteps, swapsteps, T, self.temper_stage, seed1, seed2))
-
+        self.lmps.command("temper %d %d $t %s %d %d" % (nsteps, swapsteps, self.temper_stage, seed1, seed2))
         if clear_dumps_fixes:
             for fix in self.md_fixes:
                 self.lmps.command('unfix %s' % fix)
