@@ -120,6 +120,7 @@ class pylmps(mpiobject):
         # datafuncs
         self.data_funcs = {\
             "xyz"    : self.get_xyz,\
+            "img"    : self.get_image,\
             "vel"    : self.get_vel,\
             "force"  : self.get_force,\
             "cell"   : self.get_cell,\
