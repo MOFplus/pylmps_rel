@@ -77,6 +77,7 @@ class expot_base(mpiobject):
         """The callback function called by lammps .. should not be changed
         """
         root = 0
+        nprocs = self.mpi_comm.Get_size()
 
         # TODO Not really MPI parallel yet:
         # -> Forces need to be scattered to all slaves
@@ -98,19 +99,22 @@ class expot_base(mpiobject):
             tags = None
         self.mpi_comm.Gatherv(sendbuf=sendbuf1, recvbuf=(xyz,  sendcounts1), root=root)
         self.mpi_comm.Gatherv(sendbuf=sendbuf2, recvbuf=(tags, sendcounts2), root=root)
-        # get current cell
-        self.cell = self.pl.get_cell()
-        self.xyz = np.ctypeslib.as_array(xyz)
-        self.xyz.shape=(self.natoms,3)
-        # Reorder according to tags
-        idx = tags - 1
-        self.xyz = self.xyz[idx]
-        # calculate energy and force
         if self.is_master:
+            # get current cell
+            self.cell = self.pl.get_cell()
+            self.xyz = np.ctypeslib.as_array(xyz)
+            self.xyz.shape=(self.natoms,3)
+            # Reorder according to tags
+            idx = tags - 1
+            self.xyz = self.xyz[idx]
+            # calculate energy and force
             self.calc_energy_force()
             forces = np.ctypeslib.as_array(self.force)
         else:
             forces = None
+            sendcounts1 = np.zeros(nprocs, dtype=np.int)
+        # for scatterv we need the counts on all workers
+        self.mpi_comm.Bcast(sendcounts1, root=root)
         # scatter forces to nodes
         forces_local = np.zeros(sendbuf1.size,dtype=np.float64)
         self.mpi_comm.Scatterv(sendbuf=forces, recvbuf=(forces_local, sendcounts1), root=root) 
@@ -294,6 +298,13 @@ class expot_xtb(expot_base):
         self.energy  = results['energy'] / kcalmol
         self.force   = -results['gradient'] / kcalmol / bohr
         self.bond_order = results['bondorder']
+        if self.gfn.verbose > 1:
+            print("Engergy from xTB:")
+            print(self.energy)
+            print("Forces from xTB:")
+            print(self.force)
+            print("Gradient from xTB:")
+            print(results['gradient'])
         return self.energy, self.force
 
     def get_bond_order(self):
