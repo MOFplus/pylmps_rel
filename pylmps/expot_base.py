@@ -20,6 +20,7 @@ import numpy as np
 from molsys import mpiobject
 from lammps import lammps
 from molsys.util.constants import kcalmol, electronvolt, bohr
+from mpi4py import MPI
 import time
 
 from .xtb_calc import xtb_calc
@@ -119,15 +120,12 @@ class expot_base(mpiobject):
         self.mpi_comm.bcast(sendcounts_force, root=root)
         dspls = np.zeros(nprocs, dtype=np.int)
         dspls[0] = 0
-        print("sendcounts")
-        print(sendcounts_force)
-        for i in range(1,nprocs+1):        
+        for i in range(1,nprocs):        
             dspls[i] = dspls[i-1] + sendcounts_force[i-1] 
         # scatter forces to nodes
         forces_local = np.zeros(nlocal*3,dtype=np.float64)
-        from mpi4py import MPI
         #self.mpi_comm.Scatterv(sendbuf=forces, recvbuf=(forces_local, sendcounts_force), root=root)
-        self.mpi_comm.Scatterv([forces, sendcounts_force, dpls, MPI.DOUBLE], forces_local, root=root) 
+        self.mpi_comm.Scatterv([forces, sendcounts_force, dspls, MPI.DOUBLE], forces_local, root=root) 
         forces_local.shape=(nlocal,3)
         # distribute the forces back
         for i in range(nlocal):
