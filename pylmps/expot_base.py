@@ -87,18 +87,18 @@ class expot_base(mpiobject):
         # 
         #  -> gather atom positions from all nodes on master
         # 
-        sendbuf1 = np.ctypeslib.as_array(x)
-        sendbuf2 = np.ctypeslib.as_array(tag)
-        sendcounts1 = np.array(self.mpi_comm.gather(sendbuf1.size, root))
-        sendcounts2 = np.array(self.mpi_comm.gather(sendbuf2.size, root))
+        sendbuf_coord = np.ctypeslib.as_array(x)
+        sendbuf_tags  = np.ctypeslib.as_array(tag)
+        sendcounts_coord = np.array(self.mpi_comm.gather(sendbuf_coord.size, root))
+        sendcounts2 = np.array(self.mpi_comm.gather(sendbuf_tags.size, root))
         if self.is_master:
-            xyz  = np.empty(sum(sendcounts1), dtype=np.float64)
+            xyz  = np.empty(sum(sendcounts_coord), dtype=np.float64)
             tags = np.empty(sum(sendcounts2), dtype=np.int32)
         else:
             xyz  = None
             tags = None
-        self.mpi_comm.Gatherv(sendbuf=sendbuf1, recvbuf=(xyz,  sendcounts1), root=root)
-        self.mpi_comm.Gatherv(sendbuf=sendbuf2, recvbuf=(tags, sendcounts2), root=root)
+        self.mpi_comm.Gatherv(sendbuf=sendbuf_coord, recvbuf=(xyz,  sendcounts_coord), root=root)
+        self.mpi_comm.Gatherv(sendbuf=sendbuf_tags, recvbuf=(tags, sendcounts2), root=root)
         if self.is_master:
             # get current cell
             self.cell = self.pl.get_cell()
@@ -110,14 +110,24 @@ class expot_base(mpiobject):
             # calculate energy and force
             self.calc_energy_force()
             forces = np.ctypeslib.as_array(self.force)
+            # prepare to scatter forces. Counts per worker should be the same as for the coordinates
+            sendcounts_force = np.array(sendcounts_coord, copy=True)   
         else:
             forces = None
-            sendcounts1 = np.zeros(nprocs, dtype=np.int)
+            sendcounts_force = np.zeros(nprocs, dtype=np.int)
         # for scatterv we need the counts on all workers
-        self.mpi_comm.Bcast(sendcounts1, root=root)
+        self.mpi_comm.bcast(sendcounts_force, root=root)
+        dspls = np.zeros(nprocs, dtype=np.int)
+        dspls[0] = 0
+        print("sendcounts")
+        print(sendcounts_force)
+        for i in range(1,nprocs+1):        
+            dspls[i] = dspls[i-1] + sendcounts_force[i-1] 
         # scatter forces to nodes
-        forces_local = np.zeros(sendbuf1.size,dtype=np.float64)
-        self.mpi_comm.Scatterv(sendbuf=forces, recvbuf=(forces_local, sendcounts1), root=root) 
+        forces_local = np.zeros(nlocal*3,dtype=np.float64)
+        from mpi4py import MPI
+        #self.mpi_comm.Scatterv(sendbuf=forces, recvbuf=(forces_local, sendcounts_force), root=root)
+        self.mpi_comm.Scatterv([forces, sendcounts_force, dpls, MPI.DOUBLE], forces_local, root=root) 
         forces_local.shape=(nlocal,3)
         # distribute the forces back
         for i in range(nlocal):

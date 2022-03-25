@@ -16,6 +16,8 @@ try:
 except ImportError:
     print("ImportError: Impossible to load xTB")
 
+from molsys import mpiobject
+
 import numpy as np
 import molsys
 import sys
@@ -30,7 +32,7 @@ import math
 #
 # Class definition for xtb calcaulator
 #
-class xtb_calc:
+class xtb_calc(mpiobject):
 
 
    def __init__( self
@@ -48,8 +50,11 @@ class xtb_calc:
                , mfp5file = None
                , restart=None
                , stage = None
+               , mpi_comm=None
+               , out = None
                ):
 
+      super(xtb_calc, self).__init__(mpi_comm,out)
       #
       # Sanity check(s)
       #
@@ -164,7 +169,7 @@ class xtb_calc:
                 , 'bondorder' : res.get_bond_orders()
                 }
 
-      if self.write_mfp5_file:
+      if self.write_mfp5_file and self.is_master:
          self.write_frame(results)
 
       return results
