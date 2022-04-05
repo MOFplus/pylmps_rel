@@ -119,6 +119,10 @@ class xtb_calc(mpiobject):
    def get_cell(self):
       return self.mol.get_cell()
 
+   def get_image(self):
+      images = np.zeros((self.mol.natoms,3), dtype=np.int32)
+      return images
+
    def get_bond_length(self,iat,jat):
       ri, rj, closest = self.mol.get_distvec(iat, jat)
       r = rj-ri
