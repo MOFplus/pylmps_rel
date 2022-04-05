@@ -34,7 +34,7 @@ final_energy = pl.MIN(0.01)
 # Do the test
 #
 ref_energies = {
-            'xtb': -26290.80227217 
+            'xtb': -26264.94056182 
 }
 
 
