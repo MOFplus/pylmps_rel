@@ -4,8 +4,8 @@ import pylmps
 
 # Note: This will test an loose optimization using ReaxFF in pylmps
 
-ref_energies = { 'reax_bond' : -9446.59156702
-               , 'Coulomb'   : -35.64112824
+ref_energies = { 'reax_bond' : -9446.84294381
+               , 'Coulomb'   : -35.66730987
                }
 
 m = molsys.mol.from_file("phenantrene.xyz")
