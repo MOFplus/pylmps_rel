@@ -242,6 +242,11 @@ class pylmps(mpiobject):
             self.lmps.command("unfix restr")
         return
 
+    def set_nanosphere(self,radius,sphere_name="nanosphere",fix_name="nanoreact",force=300.0,rcutoff=2.0,center=[0.0,0.0,0.0]):
+        self.lmps.command("region %s sphere %10.3f %10.3f %10.3f %10.3f side in" % (sphere_name,center[0], center[1], center[2], radius)  )
+        self.lmps.command("fix %s all wall/region nanosphere harmonic %10.3f 0.0 %10.3f" % (fix_name,force,rcutoff) ) 
+        return
+
     def setup(self, mfpx=None, local=True, mol=None, par=None, ff="MOF-FF", mfp5=None, restart=None, restart_vel=False, restart_ff=True, pressure_bath_atype=None,
             logfile = 'none', bcond=3, uff="UFF4MOF", use_mfp5=True, reaxff="cho", kspace_style='ewald',
             kspace=True, silent=False, noheader=False, use_newexpot=False,  **kwargs):
