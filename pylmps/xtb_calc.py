@@ -124,10 +124,8 @@ class xtb_calc(mpiobject):
       return images
 
    def get_bond_length(self,iat,jat):
-      ri, rj, closest = self.mol.get_distvec(iat, jat)
-      r = rj-ri
-      d = np.sqrt(np.sum(r*r)) 
-      return d
+      rij, rvec, closest = self.mol.get_distvec(iat, jat)
+      return rij 
 
    def get_elements(self):
       return self.mol.get_elems()
@@ -212,9 +210,12 @@ class xtb_calc(mpiobject):
                # default (probably not good in most cases)
                print("WARNING: Could not find pre-tabulated data for bond order for identifier %s" % identifier) 
                r_0 = 1.0
-           bo = wiberg_index * math.exp(-abs(r-r_0)/alpha) 
+           rij = r 
+           bo = wiberg_index * math.exp(-abs(rij-r_0)/alpha) 
            return bo  
-
+       #
+       # Actual function body
+       #
        if self.write_counter == self.write_frequency or self.startup:
            self.write_counter = 1  # Set back to zero
            self.startup = False
@@ -226,7 +227,7 @@ class xtb_calc(mpiobject):
                elems = self.get_elements()
                # Setup bondtab
                bond_tab = np.zeros((self.nbondsmax,2),dtype=int)
-               bond_ord = np.zeros((self.nbondsmax))
+               bond_ord = np.full((self.nbondsmax),-1.0)
                bothres = 0.5
                natoms = self.get_natoms()
                nbnd = 0
@@ -234,14 +235,15 @@ class xtb_calc(mpiobject):
                   for jat in range(0,iat+1):
                      # calculate bond length
                      bnd = self.get_bond_length(iat,jat)
-                     bo = update_bond_order(bond_order[iat][jat],bnd,elems[iat],elems[jat]) 
+                     bo = update_bond_order(bond_order[iat][jat],bnd,elems[iat],elems[jat])
+                     #print("bond order %s %s %10.3f %10.3f" % (elems[iat],elems[jat],bo, bnd))
                      if bo > bothres:
-                        bond_tab[nbnd][0] = iat
-                        bond_tab[nbnd][1] = jat
+                        bond_tab[nbnd][0] = iat+1 # We need the index starting from 1
+                        bond_tab[nbnd][1] = jat+1 # We need the index starting from 1
                         bond_ord[nbnd] = bo
                         nbnd += 1
-               # Add bondtab to mfp5 file
                if "bondord" in traj:
+                  # Add bondtab to mfp5 file
                   traj_bondord = traj["bondord"]
                   traj_bondord.resize((traj_bondord.shape[0] + 1),axis=0)
                   traj_bondord[-1:] = bond_ord
