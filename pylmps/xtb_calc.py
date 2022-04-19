@@ -186,14 +186,15 @@ class xtb_calc(mpiobject):
            # followed by a list of tuples containing the tabulated data of Wiberg bond indices and equilibrium distances.
            # 1. we find the entry for e1_e2
            # 2. search list for tuple with the closet wiberg bond index (first entry) to given argument
-           tabulated_data = { "c_h" : [(0.99857405837699698,2.0723),(0.98377257130473217,2.0790) ] 
-                            , "o_o" : [(1.4999999999999820,2.7590)]
-                            , "c_c" : [(2.9979458557061029,2.2559),(2.0372552164634392,2.4876)]
-                            , "c_o" : [(1.0103530950900168,2.6576),(1.0042166955474088,2.6851), (1.8711324229829684,2.3046)]
-                            , "h_o" : [(0.92103774706803487,1.8350),(0.90664162691079231,1.8196)]
-                            , "c_n" : [(2.8038418306284827,2.2130),(1.1418104928922275,2.6377),(1.2686688800681707,2.5832) ]
-                            , "h_n" : [(0.94056613311717330,1.9257)]
-                            , "h_h" : [(1.0000000000000002,1.3984)]
+           tabulated_data = { "c_h"  : [(0.99857405837699698,2.0723),(0.98377257130473217,2.0790) ] 
+                            , "o_o"  : [(1.4999999999999820,2.7590)]
+                            , "c_c"  : [(2.9979458557061029,2.2559),(2.0372552164634392,2.4876)]
+                            , "c_o"  : [(1.0103530950900168,2.6576),(1.0042166955474088,2.6851), (1.8711324229829684,2.3046)]
+                            , "h_o"  : [(0.92103774706803487,1.8350),(0.90664162691079231,1.8196)]
+                            , "c_n"  : [(2.8038418306284827,2.2130),(1.1418104928922275,2.6377),(1.2686688800681707,2.5832) ]
+                            , "h_n"  : [(0.94056613311717330,1.9257)]
+                            , "h_h"  : [(1.0000000000000002,1.3984)]
+                            , "na_o" : [(0.45407617747597667,3.7360)]
                             } 
            alpha = 0.3
            # decode bond info
@@ -208,7 +209,7 @@ class xtb_calc(mpiobject):
                        dist = abs(data[0] - wiberg_index) 
            else:
                # default (probably not good in most cases)
-               print("WARNING: Could not find pre-tabulated data for bond order for identifier %s" % identifier) 
+               #print("WARNING: Could not find pre-tabulated data for bond order for identifier %s" % identifier) 
                r_0 = 1.0
            rij = r 
            bo = wiberg_index * math.exp(-abs(rij-r_0)/alpha) 
