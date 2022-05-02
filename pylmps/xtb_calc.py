@@ -47,6 +47,9 @@ class xtb_calc(mpiobject):
                , verbose = 0
                , write_mfp5_file = False
                , write_frequency = 1
+               , add_central_force = False
+               , force_k = 0.01
+               , central_force_freq = 500
                , mfp5file = None
                , restart=None
                , stage = None
@@ -91,6 +94,11 @@ class xtb_calc(mpiobject):
       self.write_counter = 1
       self.startup = True
       self.stage = stage
+      # for adding central force periodically 
+      self.add_central_force = add_central_force
+      self.force_k = force_k
+      self.central_force_freq = central_force_freq
+      self.central_force_counter = 0
       if write_mfp5_file:
           self.mfp5 = mfp5io.mfp5io(mfp5file, ffe=self, restart=restart)
           # Get upper bound for bonds 
@@ -133,6 +141,12 @@ class xtb_calc(mpiobject):
    def set_stage(self,stage):
       self.stage = stage
 
+   def activate_central_force(self):
+      self.add_central_force = True
+
+   def deactivate_central_force(self):
+      self.add_central_force = False
+
    def calculate(self, xyz, cell):
       positions = np.array(xyz/bohr, dtype=c_double)
       if self.pbc == True:  
@@ -171,11 +185,26 @@ class xtb_calc(mpiobject):
                 , 'bondorder' : res.get_bond_orders()
                 }
 
+
+      if self.add_central_force:
+         self.central_force_counter += 1 
+         if self.central_force_counter == self.central_force_freq:
+             self.central_force_counter = 0
+             force = np.zeros((self.get_natoms(),3))
+             origin = [0.0,0.0,0.0]    
+             #origin = self.mol.get_com()     
+             self.mol.set_real_mass()      
+             amass = self.mol.get_mass()
+             for idx,(row,xyz) in enumerate(zip(force,self.get_xyz())):
+                 row[0] = self.force_k * amass[idx] * (xyz[0] - origin[0])**2 * np.sign(xyz[0] - origin[0])
+                 row[1] = self.force_k * amass[idx] * (xyz[1] - origin[1])**2 * np.sign(xyz[1] - origin[1])
+                 row[2] = self.force_k * amass[idx] * (xyz[2] - origin[2])**2 * np.sign(xyz[2] - origin[2])
+             results['gradient'] += force
+
       if self.write_mfp5_file and self.is_master:
          self.write_frame(results)
 
       return results
-
 
    def write_frame(self,results):
 

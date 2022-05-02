@@ -232,7 +232,8 @@ class expot_ase_turbomole(expot_base):
 class expot_xtb(expot_base):
 
     def __init__(self, mol, periodic=None, gfn_param=0, etemp=300.0, accuracy=1.0, uhf=0, verbose=0, maxiter=250
-                ,write_mfp5_file=False,write_frequency=100,mfp5file=None,restart=None,stage=None):
+                ,write_mfp5_file=False,write_frequency=100,mfp5file=None
+                ,add_central_force=False,force_k=0.01,central_force_freq=500,restart=None,stage=None):
         """constructor for xTB external potential
         
         This will construct an external potential based on the xtb program to be used inside LAMMPS       
@@ -272,6 +273,9 @@ class expot_xtb(expot_base):
         self.mfp5file = mfp5file
         self.restart = restart
         self.stage = stage
+        self.add_central_force = add_central_force
+        self.central_force_freq = central_force_freq
+        self.force_k = force_k
         return
 
     def setup(self,pl):
@@ -290,6 +294,9 @@ class expot_xtb(expot_base):
                       , mfp5file=self.mfp5file
                       , restart=self.restart
                       , stage=self.stage
+                      , add_central_force=self.add_central_force
+                      , force_k=self.force_k
+                      , central_force_freq=self.central_force_freq
                       )
         self.pprint("An xTB external potential was added")
         print("Periodic Boundary Conditions:") 
